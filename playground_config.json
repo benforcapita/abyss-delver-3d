@@ -1,0 +1,83 @@
+{
+  "schema": [
+    {
+      "name": "playerSpeed",
+      "type": "number",
+      "label": "Player Speed",
+      "default": 6.5,
+      "min": 4.0,
+      "max": 12.0,
+      "step": 0.5
+    },
+    {
+      "name": "playerMaxHp",
+      "type": "number",
+      "label": "Player Max Health",
+      "default": 100,
+      "min": 50,
+      "max": 300,
+      "step": 10
+    },
+    {
+      "name": "playerMaxMana",
+      "type": "number",
+      "label": "Player Max Mana",
+      "default": 60,
+      "min": 20,
+      "max": 150,
+      "step": 10
+    },
+    {
+      "name": "baseSwordDamage",
+      "type": "number",
+      "label": "Base Sword Damage",
+      "default": 28,
+      "min": 10,
+      "max": 80,
+      "step": 2
+    },
+    {
+      "name": "spellDamage",
+      "type": "number",
+      "label": "Spell Fireball Damage",
+      "default": 45,
+      "min": 20,
+      "max": 120,
+      "step": 5
+    },
+    {
+      "name": "lookSensitivity",
+      "type": "number",
+      "label": "Look Sensitivity",
+      "default": 1.8,
+      "min": 0.5,
+      "max": 4.0,
+      "step": 0.1
+    },
+    {
+      "name": "enableAutoAimAssist",
+      "type": "boolean",
+      "label": "Auto-Aim Assist",
+      "default": true
+    },
+    {
+      "name": "defaultMusicVolume",
+      "type": "number",
+      "label": "Default Music Volume",
+      "default": 0.45,
+      "min": 0,
+      "max": 1,
+      "step": 0.05
+    }
+  ],
+  "values": {
+    "playerSpeed": 6.5,
+    "playerMaxHp": 100,
+    "playerMaxMana": 60,
+    "baseSwordDamage": 28,
+    "spellDamage": 45,
+    "lookSensitivity": 1.8,
+    "enableAutoAimAssist": true,
+    "defaultMusicVolume": 0.45
+  }
+}

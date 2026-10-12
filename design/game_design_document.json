@@ -1,0 +1,122 @@
+{
+  "title": "Abyss Delver 3D",
+  "hook": "Conquer dynamic subterranean monster labyrinths",
+  "game_overview": "Delve into procedural dungeons, defeat fearsome floor bosses, gather enchanted loot, and survive scaling subterranean perils in first-person 3D.",
+  "artstyle": "fantasy",
+  "genre": "rpg",
+  "winning_condition": "Defeat the ancient Dungeon Overlord on Floor 5 and secure the Prime Relic.",
+  "losing_condition": "Player health drops to zero from enemy strikes or dungeon hazards.",
+  "player_mode": "single_player",
+  "supported_orientations": [
+    "landscape"
+  ],
+  "input_methods": [
+    "touch",
+    "mouse",
+    "keyboard"
+  ],
+  "score_options": {
+    "score_type": "points",
+    "score_order": "higher_is_better"
+  },
+  "low_end_device_support": false,
+  "mobile_playable": true,
+  "language": [
+    "en"
+  ],
+  "content_descriptors": [
+    "violence"
+  ],
+  "controls": [
+    {
+      "input": "W / S or Up / Down Keys",
+      "action": "Move forward and backward along the player look direction."
+    },
+    {
+      "input": "A / D or Left / Right Keys",
+      "action": "Strafe left and right in the 3D dungeon corridors."
+    },
+    {
+      "input": "Mouse Movement / Touch Drag",
+      "action": "Look and aim first-person camera horizontally and vertically."
+    },
+    {
+      "input": "Left Mouse Button / Attack Button",
+      "action": "Perform melee sword slash or magical ranged blast."
+    },
+    {
+      "input": "Spacebar / Dash Button",
+      "action": "Execute quick evasion dash with temporary invulnerability."
+    },
+    {
+      "input": "E / Interact Button",
+      "action": "Open loot chests, drink elixir fountains, or descend floor stairs."
+    },
+    {
+      "input": "1 / 2 / 3 Number Keys / Item Buttons",
+      "action": "Consume health potions, mana flasks, or trigger loot abilities."
+    }
+  ],
+  "sections": [
+    {
+      "title": "Design Pillars",
+      "content": "1. Immersive First-Person Exploration: Atmospheric 3D corridors with procedural layouts, torchlit chambers, and ominous ambient audio. 2. Tactical Real-Time Combat: Snappy weapon swings, spellcasting, timing-based blocks, and evasion dashes against diverse enemy archetypes. 3. Dynamic Scaling Progression: Procedural floor generation scaling enemy stats and boss encounters based on player floor depth and collected legendary loot.",
+      "summary": "Core pillars focusing on immersion, tactical combat, and rewarding progression."
+    },
+    {
+      "title": "Core Loop",
+      "content": "The player spawns at the entrance of a procedural 3D dungeon floor. They navigate maze-like corridors, battling skeletons, goblins, and dark mages while finding treasure chests with randomized weapons, armor, and rings. Upon locating the Boss Chamber, they defeat the floor boss to unlock the Exit Portal and claim rare relic loot. Difficulty automatically evolves based on depth and player gear rating.",
+      "summary": "Explore procedural floor -> Slay monsters & loot chests -> Defeat floor boss -> Upgrade stats -> Descend deeper."
+    },
+    {
+      "title": "Core Mechanics",
+      "content": "1. First-Person Combat System: Primary melee slashes with combo timing, ranged magic missiles with mana management, and a stamina-based dodge roll. 2. Procedural Dungeon Generator: Grid-based room and hallway algorithm generating unique corridors, trap rooms, treasure vaults, and boss arenas every run. 3. Evolving Loot & Difficulty Matrix: Tiered loot (Common, Rare, Epic, Legendary) with stat modifiers (Damage, Defense, Speed, Crit, Life Leech). Enemy health, speed, and attack patterns scale quadratically based on dungeon floor level and the player's total item power rating. 4. Interactive Dungeon Props: Breakable urns, lockable chests requiring keys, healing altars, and floor spike traps.",
+      "summary": "First-person combat, procedural dungeon layouts, loot tiering, and adaptive difficulty scaling."
+    },
+    {
+      "title": "3D Camera & Movement Alignment",
+      "content": "3D Coordinate System: Standard Three.js right-handed coordinate space (+Y is Up, +X is Right, -Z is Forward into scene). Camera Perspective: First-person viewpoint attached to the player controller at eye height (Y=1.6) with yaw/pitch clamping. Movement Dynamics: Kinematic velocity controller with smooth acceleration, collision damping against dungeon walls, and step climbing. Asset Orientation: All weapons, enemies, projectile spells, and props are oriented facing -Z by default.",
+      "summary": "Smooth first-person camera with Rapier physics and responsive strafing."
+    },
+    {
+      "title": "3D Scene Hierarchy & Lighting Mandates",
+      "content": "Environment: Dark stone brick dungeon with vaulted archways, glowing wall braziers, mossy flagstones, and atmospheric volumetric dust particles. Lighting: High-intensity physically correct point lights on wall torches (warm orange, intensity 4.0), soft blue ambient fill, and emissive weapon glow effects. Hazard Affordance: Floor spike traps feature glowing crimson runes and sharp metallic teeth. UI & HUD: Dedicated safe zone HUD with health/mana orbs, mini-map, weapon hotbar, and boss health bar cleanly styled in TailwindCSS.",
+      "summary": "Moody torchlit crypt environment with dynamic point lights and emissive cues."
+    },
+    {
+      "title": "Characters & Enemies",
+      "content": "1. Player Delver: First-person viewmodel displaying animated sword, shield, and spell hands. 2. Standard Mobs: Skeleton Warriors (melee rush), Shadow Cultists (homing fireballs), and Slime Stalkers (area poison puddle). 3. Bosses: Floor 1 - Bone Colossus (heavy ground slam); Floor 2 - Crimson Archmage (teleporting projectile barrages); Floor 3 - Abyssal Wyrm (charge attacks); Floor 4 - Shadow Knight (shield parry and cleave); Floor 5 - Void Overlord (dimensional rift explosions).",
+      "summary": "Player hero, procedural dungeon mobs, and unique floor bosses."
+    },
+    {
+      "title": "Fairness Tools",
+      "content": "A top-right compass minimap reveals visited rooms, chest locations, and enemy proximity. Boss attacks have explicit red telegraph ground circles giving reaction windows. Guaranteed health potion drops after clearing major enemy rooms.",
+      "summary": "Minimap radar, danger telegraphs, and potion drop guarantees."
+    },
+    {
+      "title": "Juice & Game Feel",
+      "content": "Anticipation Juice: Weapon windup animations with camera FOV shift, glowing charging particle orbs for heavy spells. State Change Juice: Low health vignette pulsing red, weapon elemental trails (fire, lightning, frost) when buffed by loot. Impact Juice: 3D camera shake on weapon hits, dynamic hit-stop micro-pause on critical hits, floating damage numbers, and shattering stone debris.",
+      "summary": "Feedback across anticipation, state changes, and combat impacts."
+    },
+    {
+      "title": "Social Mechanics & Audience",
+      "content": "Single-player dungeon crawler with run timer, score based on floors cleared and monsters defeated, and global leaderboard integration via Playground SDK.",
+      "summary": "High-score dungeon runs, speedrun timers, and leaderboards."
+    },
+    {
+      "title": "Accessibility",
+      "content": "Adjustable mouse/touch look sensitivity, optional soft target-lock assist for combat, clear high-contrast health bars, and fully rebindable keyboard/touch inputs.",
+      "summary": "Configurable look sensitivity, auto-aim assist toggle, and colorblind-safe UI."
+    },
+    {
+      "title": "Structural Integrity",
+      "content": "State Flow: Main Menu -> Procedural Dungeon Floor Loading -> Real-Time First-Person Gameplay -> Boss Arena Encounter -> Floor Clear / Loot Summary -> Next Floor / Victory Screen / Game Over Screen. Seamless run restarts and persistent best run stats.",
+      "summary": "Complete UI state machine from Title to Floor Transitions and Victory/Defeat."
+    },
+    {
+      "title": "Virtual Touch Controls Implementation",
+      "content": "Render on-screen virtual joystick on the bottom-left for movement, a touch look drag area on the right half of the screen, and floating action buttons for Attack, Spell, Dash, and Interact. Conditionally rendered when useIsMobile() is true, applying touch-none and pointer-events-auto strictly on button elements.",
+      "summary": "Mobile touch controls with dual virtual sticks and action buttons."
+    }
+  ]
+}
