@@ -248,6 +248,7 @@ export function BackgroundMusic({
   const isPlayingRef = useRef(isPlaying);
   const [useFallback, setUseFallback] = useState(false);
   const useFallbackRef = useRef(false);
+  const [fallbackFailed, setFallbackFailed] = useState(false);
   const [platformMuted, setPlatformMuted] = useState(false);
 
   const effectiveMuted = isMuted || platformMuted;
@@ -300,20 +301,24 @@ export function BackgroundMusic({
       // Autoplay unlock for mobile/desktop browsers with iOS WebKit silence kickstart
       const unlock = () => {
         if (ctx.state === 'suspended') {
-          void ctx
-            .resume()
-            .then(() => {
-              try {
-                const buf = ctx.createBuffer(1, 1, 22050);
-                const src = ctx.createBufferSource();
-                src.buffer = buf;
-                src.connect(ctx.destination);
-                src.start(0);
-              } catch (_) {
-                // Ignore silent buffer kickstart errors
-              }
-            })
-            .catch(() => {});
+          try {
+            void ctx
+              .resume()
+              .then(() => {
+                try {
+                  const buf = ctx.createBuffer(1, 1, 22050);
+                  const src = ctx.createBufferSource();
+                  src.buffer = buf;
+                  src.connect(ctx.destination);
+                  src.start(0);
+                } catch (_) {
+                  // Ignore silent buffer kickstart errors
+                }
+              })
+              .catch(() => {});
+          } catch (_) {
+            // Ignore resume errors
+          }
         }
         if (ctx.state === 'running') {
           cleanupUnlock();
@@ -372,7 +377,11 @@ export function BackgroundMusic({
     stopWebAudioSource();
 
     if (ctx.state === 'suspended') {
-      void ctx.resume().catch(() => {});
+      try {
+        void ctx.resume().catch(() => {});
+      } catch (_) {
+        // Ignore resume errors
+      }
     }
 
     const source = ctx.createBufferSource();
@@ -401,15 +410,20 @@ export function BackgroundMusic({
       }
     };
 
-    source.start(0);
-    sourceNodeRef.current = source;
-    trackGainRef.current = trackGain;
+    try {
+      source.start(0);
+      sourceNodeRef.current = source;
+      trackGainRef.current = trackGain;
+    } catch (_) {
+      // Ignore start failure
+    }
   };
 
   // Fetch and decode audio file when URL changes
   useEffect(() => {
     setUseFallback(false);
     useFallbackRef.current = false;
+    setFallbackFailed(false);
     stopWebAudioSource();
     loopResultRef.current = null;
 
@@ -429,10 +443,10 @@ export function BackgroundMusic({
         if (!res.ok) throw new Error(`HTTP error ${res.status}`);
         return res.arrayBuffer();
       })
-      .then((arrayBuffer) => {
+      .then(async (arrayBuffer) => {
         const ctx = getOrCreateContext();
         if (!ctx) throw new Error('AudioContext unavailable');
-        return ctx.decodeAudioData(arrayBuffer);
+        return await ctx.decodeAudioData(arrayBuffer);
       })
       .then((decodedBuffer) => {
         if (isCancelled || abortController.signal.aborted) return;
@@ -449,12 +463,8 @@ export function BackgroundMusic({
           startWebAudioLoop();
         }
       })
-      .catch((err: unknown) => {
+      .catch(() => {
         if (isCancelled || abortController.signal.aborted) return;
-        console.warn(
-          '[BackgroundMusic] Web Audio load failed, falling back to HTML5 audio:',
-          err,
-        );
         setUseFallback(true);
         useFallbackRef.current = true;
       });
@@ -470,12 +480,17 @@ export function BackgroundMusic({
   // Handle Play/Pause with true pause & resume
   useEffect(() => {
     if (useFallback) {
+      if (fallbackFailed) return;
       const audio = fallbackAudioRef.current;
       if (!audio) return;
       if (isPlaying) {
-        void audio.play().catch(() => {});
+        try {
+          void audio.play().catch(() => {});
+        } catch (_) {}
       } else {
-        audio.pause();
+        try {
+          audio.pause();
+        } catch (_) {}
       }
       return;
     }
@@ -485,17 +500,21 @@ export function BackgroundMusic({
 
     if (isPlaying) {
       if (ctx.state === 'suspended') {
-        void ctx.resume().catch(() => {});
+        try {
+          void ctx.resume().catch(() => {});
+        } catch (_) {}
       }
       if (!sourceNodeRef.current && loopResultRef.current) {
         startWebAudioLoop();
       }
     } else {
       if (ctx.state === 'running') {
-        void ctx.suspend().catch(() => {});
+        try {
+          void ctx.suspend().catch(() => {});
+        } catch (_) {}
       }
     }
-  }, [isPlaying, useFallback]);
+  }, [isPlaying, useFallback, fallbackFailed]);
 
   // Handle tab visibility changes (suspend on hide, resume on visible)
   useEffect(() => {
@@ -504,11 +523,15 @@ export function BackgroundMusic({
       if (!ctx || useFallback) return;
       if (document.hidden) {
         if (ctx.state === 'running') {
-          void ctx.suspend().catch(() => {});
+          try {
+            void ctx.suspend().catch(() => {});
+          } catch (_) {}
         }
       } else if (isPlayingRef.current) {
         if (ctx.state === 'suspended') {
-          void ctx.resume().catch(() => {});
+          try {
+            void ctx.resume().catch(() => {});
+          } catch (_) {}
         }
       }
     };
@@ -550,7 +573,9 @@ export function BackgroundMusic({
         unlockCleanupRef.current = null;
       }
       if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
-        void audioCtxRef.current.close().catch(() => {});
+        try {
+          void audioCtxRef.current.close().catch(() => {});
+        } catch (_) {}
         audioCtxRef.current = null;
         masterGainRef.current = null;
       }
@@ -558,13 +583,14 @@ export function BackgroundMusic({
     };
   }, []);
 
-  if (useFallback && url) {
+  if (useFallback && url && !fallbackFailed) {
     return (
       <audio
         ref={fallbackAudioRef}
         src={url}
         loop
         autoPlay={isPlaying}
+        onError={() => setFallbackFailed(true)}
         style={{display: 'none'}}
       />
     );

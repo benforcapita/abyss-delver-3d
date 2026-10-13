@@ -236,8 +236,7 @@ export const CONFIG = {
     step: 0.05,
   },
   backgroundMusicUrl: {
-    value:
-      'https://storage.googleapis.com/assets-gen-playground/musiclibrary/automated_dream.mp3',
+    value: '/audio/dungeon_drone.mp3',
     type: 'string',
     label: 'Background Music URL',
     group: 'AUDIO',
@@ -264,18 +263,18 @@ export function getConfig<K extends ConfigKey>(
 /** Background music tracks available for the game to use. */
 export const AVAILABLE_MUSIC_TRACKS: readonly MusicTrack[] = [
   {
-    name: 'automated_dream',
-    url: 'https://storage.googleapis.com/assets-gen-playground/musiclibrary/automated_dream.mp3',
+    name: 'dungeon_drone',
+    url: '/audio/dungeon_drone.mp3',
     description: 'Mysterious dungeon exploration atmosphere with rich medieval ambient tension.',
   },
   {
-    name: 'grid_runner',
-    url: 'https://storage.googleapis.com/assets-gen-playground/musiclibrary/grid_runner.mp3',
+    name: 'boss_pulse',
+    url: '/audio/boss_pulse.mp3',
     description: 'High octane boss battle encounter theme.',
   },
   {
-    name: 'deep_pocket',
-    url: 'https://storage.googleapis.com/assets-gen-playground/musiclibrary/deep_pocket.mp3',
+    name: 'dungeon_drone',
+    url: '/audio/dungeon_drone.mp3',
     description: 'Cryptic crypt depths and eerie subterranean dungeon corridors.',
   },
 ];

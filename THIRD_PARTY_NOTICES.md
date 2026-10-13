@@ -120,3 +120,4 @@ SOFTWARE.
 
 _This file lists third-party components only. The license governing your
 application itself is provided separately in `LICENSE` / `LICENSE.md`.
+For soundtrack assets and licensing, see [docs/AUDIO.md](docs/AUDIO.md).
