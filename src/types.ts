@@ -1,6 +1,8 @@
 // tslint:disable
 /* eslint-disable */
 
+import type {BossTelegraph} from './bossTelegraph';
+
 export interface Vec3 {
   x: number;
   y: number;
@@ -118,6 +120,7 @@ export interface EnemyEntity {
   state: 'idle' | 'chase' | 'windup' | 'attack' | 'hurt' | 'dead';
   stateTimer: number;
   telegraphTimer: number;
+  telegraph?: BossTelegraph;
   isBoss: boolean;
   tier: number;
   color: string;

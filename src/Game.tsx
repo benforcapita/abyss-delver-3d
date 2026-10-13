@@ -5,6 +5,13 @@ import {Bloom, EffectComposer} from '@react-three/postprocessing';
 import type {MutableRefObject} from 'react';
 import React, {Suspense, useEffect, useMemo, useRef, useState} from 'react';
 import * as THREE from 'three';
+import {
+  BOSS_TELEGRAPH_WINDUP,
+  isInsideRing,
+  startTelegraph,
+  tickTelegraph,
+} from './bossTelegraph';
+import {BossTelegraph} from './components/BossTelegraph';
 import {getConfig} from './constants';
 import {generateDungeonFloor} from './dungeonGenerator';
 import {InputSnapshot, useInput} from './input';
@@ -805,6 +812,11 @@ function DungeonScene({
       );
       enemy.rotY = angleToPlayer;
 
+      // Clear a boss telegraph if the enemy was knocked out of windup (e.g. hurt)
+      if (enemy.telegraph && enemy.state !== 'windup') {
+        enemy.telegraph = undefined;
+      }
+
       // Enemy AI States
       if (distToPlayer < 20.0) {
         if (enemy.state === 'idle') {
@@ -819,18 +831,35 @@ function DungeonScene({
             enemy.pos[2] += Math.cos(angleToPlayer) * speed;
           } else {
             enemy.state = 'windup';
-            enemy.stateTimer = 0.5;
-            enemy.telegraphTimer = 0.5;
+            enemy.stateTimer = enemy.isBoss ? BOSS_TELEGRAPH_WINDUP : 0.5;
+            enemy.telegraphTimer = enemy.stateTimer;
+            if (enemy.isBoss) {
+              // Telegraph locks onto the player's current position
+              enemy.telegraph = startTelegraph(pPos.x, pPos.z);
+            }
           }
         } else if (enemy.state === 'windup') {
           enemy.stateTimer -= dt;
           enemy.telegraphTimer = enemy.stateTimer;
+          if (enemy.telegraph) {
+            enemy.telegraph = tickTelegraph(enemy.telegraph, dt);
+          }
           if (enemy.stateTimer <= 0) {
             enemy.state = 'attack';
             enemy.stateTimer = 0.3;
 
             // Execute attack
-            if (enemy.archetype === 'cultist' || enemy.archetype === 'boss_crimson_archmage') {
+            if (enemy.isBoss) {
+              // Boss slam only hits if the player is still inside the ring
+              const tel = enemy.telegraph;
+              enemy.telegraph = undefined;
+              if (
+                tel &&
+                isInsideRing(pPos.x, pPos.z, tel.cx, tel.cz, tel.radius)
+              ) {
+                applyPlayerDamage(enemy.attackPower, enemy.name);
+              }
+            } else if (enemy.archetype === 'cultist') {
               // Ranged homing fireball
               gameAudio.playArcadeLaser();
               const targetX = pPos.x;
@@ -1431,6 +1460,16 @@ function DungeonScene({
           </group>
         );
       })}
+
+      {/* Boss Attack Telegraphs (world-space, locked at windup start) */}
+      {enemies.map(
+        (enemy) =>
+          enemy.hp > 0 &&
+          enemy.isBoss &&
+          enemy.telegraph && (
+            <BossTelegraph key={`tel_${enemy.id}`} telegraph={enemy.telegraph} />
+          ),
+      )}
 
       {/* Projectiles */}
       {projectiles.map((proj) => (
