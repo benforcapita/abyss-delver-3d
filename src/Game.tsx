@@ -31,6 +31,7 @@ import {generateDungeonFloor} from './dungeonGenerator';
 import {createOneShotLatch} from './floorLatch';
 import {InputSnapshot, useInput} from './input';
 import {syncMinimapBridge, type MinimapBridge} from './minimap';
+import type {OnboardingEvent} from './onboarding';
 import {enemyKillScore, isGameOver} from './rules';
 import {applyDamage, debugCheats} from './debug';
 import {
@@ -60,6 +61,7 @@ interface GameProps {
   onLootFound: (item: LootItem) => void;
   onFloorClear: () => void;
   onBossDefeated?: () => void;
+  onOnboardingEvent?: (e: OnboardingEvent) => void;
   triggerAttackRef: MutableRefObject<boolean>;
   triggerSpellRef: MutableRefObject<boolean>;
   triggerDashRef: MutableRefObject<boolean>;
@@ -177,6 +179,7 @@ function DungeonScene({
   onLootFound,
   onFloorClear,
   onBossDefeated,
+  onOnboardingEvent,
   triggerAttackRef,
   triggerSpellRef,
   triggerDashRef,
@@ -309,6 +312,9 @@ function DungeonScene({
   useEffect(() => {
     const handlePointerLockChange = () => {
       // track lock state
+      if (document.pointerLockElement === gl.domElement) {
+        onOnboardingEvent?.({type: 'look'});
+      }
     };
 
     const handleMouseMove = (e: MouseEvent) => {
@@ -321,6 +327,9 @@ function DungeonScene({
           -Math.PI / 2.2,
           Math.min(Math.PI / 2.2, playerPitch.current),
         );
+        if (e.movementX !== 0 || e.movementY !== 0) {
+          onOnboardingEvent?.({type: 'look'});
+        }
       }
     };
 
@@ -376,6 +385,7 @@ function DungeonScene({
   // Player Melee Sword Strike
   const executeAttack = () => {
     if (playerStats.attackCooldown > 0) return;
+    onOnboardingEvent?.({type: 'attack'});
     swingProgress.current = 1.0;
     gameAudio.playSwordClash();
 
@@ -516,6 +526,7 @@ function DungeonScene({
   // Player Evasion Dash
   const executeDash = () => {
     if (playerStats.dashCooldown > 0 || playerStats.stamina < 20) return;
+    onOnboardingEvent?.({type: 'dash'});
     gameAudio.playPowerupChime();
 
     setPlayerStats((prev) => ({
@@ -539,6 +550,7 @@ function DungeonScene({
 
   // Interact with nearby props (chests, shrines, stairs)
   const executeInteract = () => {
+    onOnboardingEvent?.({type: 'interact'});
     const pPos = playerPos.current;
 
     // Check Chests
@@ -687,6 +699,7 @@ function DungeonScene({
         Math.min(Math.PI / 2.2, playerPitch.current),
       );
       touchLookDeltaRef.current = {dx: 0, dy: 0};
+      onOnboardingEvent?.({type: 'look'});
     }
 
     // Trigger action refs from UI / keyboard
@@ -758,6 +771,7 @@ function DungeonScene({
     }
 
     const isMoving = moveX !== 0 || moveZ !== 0;
+    if (isMoving) onOnboardingEvent?.({type: 'move', dt});
     const baseSpeed =
       getConfig('playerSpeed') + (playerStats.equippedRing.moveSpeedBonus || 0);
 

@@ -55,6 +55,16 @@ import {SettingsPanel} from './components/SettingsPanel';
 import {FINAL_FLOOR, floorClearScore, isVictory, victoryBonus} from './rules';
 import {loadBest, saveBest, type BestScore} from './bestScore';
 import {isGamePaused} from './pause';
+import {
+  advance as advanceOnboarding,
+  loadOnboarding,
+  nextStep as nextOnboardingStep,
+  saveOnboarding,
+  skipAll as skipOnboarding,
+  text as onboardingText,
+  type OnboardingEvent,
+  type OnboardingState,
+} from './onboarding';
 
 interface CustomWindow extends Window {
   canHandleBackKey?: boolean;
@@ -205,6 +215,39 @@ export default function App() {
       setBest(saveBest({score: gameState.score, floor: gameState.level}));
     }
   }, [gameState.status, gameState.score, gameState.level]);
+
+  // First-run onboarding hints (once per profile, 'ad3d.onboarding'). The
+  // authoritative state lives in a ref because 'move' events arrive per frame;
+  // React state only updates when the visible step changes.
+  const [onboarding, setOnboarding] = useState<OnboardingState>(() =>
+    loadOnboarding(),
+  );
+  const onboardingRef = useRef(onboarding);
+
+  const handleOnboardingEvent = useCallback((e: OnboardingEvent) => {
+    const prev = onboardingRef.current;
+    if (prev.finished) return;
+    const next = advanceOnboarding(prev, e);
+    if (next === prev) return;
+    onboardingRef.current = next;
+    if (nextOnboardingStep(next) !== nextOnboardingStep(prev)) {
+      saveOnboarding(next);
+      setOnboarding(next);
+    }
+  }, []);
+
+  const handleOnboardingSkip = useCallback(() => {
+    const next = skipOnboarding(onboardingRef.current);
+    onboardingRef.current = next;
+    saveOnboarding(next);
+    setOnboarding(next);
+  }, []);
+
+  // Onboarding hints only show during a fresh floor-1 run.
+  const onboardingStep =
+    gameState.status === 'PLAYING' && gameState.level === 1
+      ? nextOnboardingStep(onboarding)
+      : null;
 
   // Back key support
   useEffect(() => {
@@ -456,6 +499,7 @@ export default function App() {
           onLootFound={handleLootFound}
           onFloorClear={handleFloorClear}
           onBossDefeated={handleBossDefeated}
+          onOnboardingEvent={handleOnboardingEvent}
           triggerAttackRef={triggerAttackRef}
           triggerSpellRef={triggerSpellRef}
           triggerDashRef={triggerDashRef}
@@ -530,6 +574,29 @@ export default function App() {
                 <Minimap bridge={minimapBridgeRef} active />
               </div>
             </div>
+
+            {/* First-Run Onboarding Hint (top-center, under the boss bar) */}
+            {onboardingStep && (
+              <div
+                data-testid="onboarding-hint"
+                className="pointer-events-none absolute left-1/2 top-14 md:top-16 -translate-x-1/2 flex items-center gap-2 bg-black/80 backdrop-blur border border-amber-500/50 px-3 py-1.5 rounded-lg shadow-xl animate-fade-in">
+                <Info className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="text-xs md:text-sm font-bold text-amber-200 whitespace-nowrap">
+                  {onboardingText(
+                    onboardingStep,
+                    settings.keyBindings,
+                    isMobile,
+                  )}
+                </span>
+                <button
+                  type="button"
+                  data-testid="onboarding-skip"
+                  onClick={handleOnboardingSkip}
+                  className="pointer-events-auto shrink-0 text-[10px] md:text-xs font-bold text-zinc-400 hover:text-white underline underline-offset-2 transition-colors">
+                  Skip
+                </button>
+              </div>
+            )}
 
             {/* Crosshair in Center Viewport */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
