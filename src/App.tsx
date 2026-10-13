@@ -21,10 +21,12 @@ import {
   VolumeX,
   Zap,
 } from 'lucide-react';
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {AVAILABLE_MUSIC_TRACKS, getConfig} from './constants';
 import {Game} from './Game';
+import {DebugPanel} from './components/DebugPanel';
 import {RotatePrompt} from './components/RotatePrompt';
+import {isDebugEnabled} from './debug';
 import {
   DungeonFloorData,
   EnemyEntity,
@@ -83,6 +85,10 @@ const DEFAULT_RING: LootItem = {
 
 export default function App() {
   const isMobile = useIsMobile();
+  const debugEnabled = useMemo(
+    () => isDebugEnabled(window.location.search, import.meta.env.DEV),
+    [],
+  );
 
   const [gameState, setGameState] = useState<GameState>({
     status: 'START',
@@ -958,6 +964,16 @@ export default function App() {
           onAction={initGame}
           icon={<RotateCw className="w-6 h-6 text-black" />}
           tone="danger"
+        />
+      )}
+
+      {debugEnabled && gameState.status === 'PLAYING' && (
+        <DebugPanel
+          onSkipFloor={() => {
+            if (gameState.level < FINAL_FLOOR) {
+              advanceToNextFloor();
+            }
+          }}
         />
       )}
     </div>

@@ -9,6 +9,7 @@ import {getConfig} from './constants';
 import {generateDungeonFloor} from './dungeonGenerator';
 import {InputSnapshot, useInput} from './input';
 import {enemyKillScore, isGameOver} from './rules';
+import {debugCheats} from './debug';
 import {
   ChestEntity,
   DungeonFloorData,
@@ -586,6 +587,16 @@ function DungeonScene({
     if (gameState.status !== 'PLAYING') return;
     const dt = Math.min(delta, 0.1);
 
+    if (debugCheats.killBossRequested) {
+      debugCheats.killBossRequested = false;
+      const boss = enemiesRef.current.find((e) => e.isBoss && e.hp > 0);
+      if (boss) {
+        boss.hp = 0;
+        handleEnemyDefeated(boss);
+        setEnemies([...enemiesRef.current]);
+      }
+    }
+
     // Handle touch look delta from mobile
     if (touchLookDeltaRef.current.dx !== 0 || touchLookDeltaRef.current.dy !== 0) {
       const sens = getConfig('lookSensitivity') * 0.0035;
@@ -979,6 +990,7 @@ function DungeonScene({
     screenShake.current = 0.35;
 
     setPlayerStats((prev) => {
+      if (debugCheats.godMode) return prev;
       const newHp = Math.max(0, prev.hp - finalDmg);
       if (isGameOver(newHp) && !gameOverLatchedRef.current) {
         gameOverLatchedRef.current = true;
