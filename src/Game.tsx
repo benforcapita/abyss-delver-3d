@@ -14,6 +14,7 @@ import {
   usesGroundTelegraph,
 } from './bossTelegraph';
 import {BossTelegraph} from './components/BossTelegraph';
+import {cameraMoveVector} from './cameraBasis';
 import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
 import {applyCameraLocalPose, createFlashMap, holdHitFlashes, PLAYER_FLASH_ID, syncHitFlashes, triggerHitFlash} from './fx/hitFlash';
 import {createHitStopState, isHeavyHit, stepHitStop, triggerHitStop} from './fx/hitStop';
@@ -765,9 +766,6 @@ function DungeonScene({
     const baseSpeed =
       getConfig('playerSpeed') + (playerStats.equippedRing.moveSpeedBonus || 0);
 
-    const cosY = Math.cos(playerYaw.current);
-    const sinY = Math.sin(playerYaw.current);
-
     if (isDashing.current) {
       dashTimer.current -= dt;
       const dashSpeed = baseSpeed * 2.8;
@@ -777,13 +775,10 @@ function DungeonScene({
         isDashing.current = false;
       }
     } else if (isMoving) {
-      const len = Math.hypot(moveX, moveZ);
-      const nx = moveX / len;
-      const nz = moveZ / len;
-
-      // Transform movement relative to camera yaw
-      const worldDx = (nx * cosY - nz * sinY) * baseSpeed * dt;
-      const worldDz = (nx * sinY + nz * cosY) * baseSpeed * dt;
+      // Camera-relative: W toward where the camera looks (AD-24.10).
+      const move = cameraMoveVector(moveX, moveZ, playerYaw.current);
+      const worldDx = move.x * baseSpeed * dt;
+      const worldDz = move.z * baseSpeed * dt;
 
       // Wall collision check against grid
       const TILE_SIZE = 4;
