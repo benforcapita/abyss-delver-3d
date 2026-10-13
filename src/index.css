@@ -1,1 +1,33 @@
 @import 'tailwindcss';
+
+/* Low-HP red edge. Opacity and stops are written from a ref, not React state.
+   The pulse is CSS-only so the frame loop does not re-render to animate it. */
+.low-hp-vignette {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  opacity: var(--vignette-opacity, 0);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(140, 0, 0, 0) var(--vignette-clear, 64%),
+    rgba(170, 18, 18, 0.78) var(--vignette-mid, 84%),
+    rgba(70, 0, 0, 0.96) 100%
+  );
+}
+
+@keyframes ad-low-hp-pulse {
+  0%,
+  100% {
+    opacity: var(--vignette-opacity, 0);
+  }
+  50% {
+    opacity: calc(var(--vignette-opacity, 0) * 0.62);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .low-hp-vignette {
+    animation: none !important;
+  }
+}

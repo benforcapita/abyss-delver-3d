@@ -99,6 +99,16 @@ describe('settings store', () => {
     expect(S.normalizeSettings({touchLookSensitivity: 'x'}).touchLookSensitivity).toBe(1.8);
   });
 
+  it('migrates legacy Space attack+dash saves to Mouse0 attack', () => {
+    store.set(KEY, JSON.stringify({keyBindings: {attack: 'Space', dash: 'Space'}}));
+    expect(S.reloadSettings().keyBindings).toEqual(S.DEFAULT_SETTINGS.keyBindings);
+    expect(S.reloadSettings().keyBindings.attack).toBe('Mouse0');
+    expect(S.reloadSettings().keyBindings.dash).toBe('Space');
+    // Migration result is persisted on the next save.
+    S.saveSettings({sfxVolume: 0.5});
+    expect(JSON.parse(store.get(KEY)!).keyBindings).toEqual(S.DEFAULT_SETTINGS.keyBindings);
+  });
+
   it('notifies subscribers and exposes live values via getConfig', async () => {
     const seen: number[] = [];
     const off = S.subscribeSettings((s) => seen.push(s.lookSensitivity));
