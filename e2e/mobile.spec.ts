@@ -8,7 +8,6 @@ const CONTROL_IDS = [
   'btn-attack',
   'btn-spell',
   'btn-dash',
-  'btn-interact',
   'btn-potion',
   'mobile-joystick',
 ];
