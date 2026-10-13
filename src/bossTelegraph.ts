@@ -54,6 +54,26 @@ export function isTelegraphComplete(t: BossTelegraph): boolean {
 }
 
 /**
+ * Pause-aware tick: while paused the same object is returned unchanged so no
+ * windup time accrues; otherwise delegates to tickTelegraph.
+ */
+export function advanceTelegraph(
+  t: BossTelegraph,
+  dt: number,
+  paused: boolean,
+): BossTelegraph {
+  return paused ? t : tickTelegraph(t, dt);
+}
+
+/** Telegraph hits never resolve while paused, even if the windup completed. */
+export function shouldResolveTelegraph(
+  t: BossTelegraph,
+  paused: boolean,
+): boolean {
+  return !paused && isTelegraphComplete(t);
+}
+
+/**
  * Only bosses on the melee/slam branch get a ground ring. The crimson
  * archmage's fireball is a single-target projectile with no AoE impact, so it
  * shows no ring; non-bosses never telegraph.

@@ -6,11 +6,11 @@ import type {MutableRefObject} from 'react';
 import React, {Suspense, useEffect, useMemo, useRef, useState} from 'react';
 import * as THREE from 'three';
 import {
+  advanceTelegraph,
   BOSS_TELEGRAPH_WINDUP,
   isInsideRing,
   meleeHitLands,
   startTelegraph,
-  tickTelegraph,
   usesGroundTelegraph,
 } from './bossTelegraph';
 import {BossTelegraph} from './components/BossTelegraph';
@@ -876,12 +876,14 @@ function DungeonScene({
             }
           }
         } else if (enemy.state === 'windup') {
-          enemy.stateTimer -= dt;
-          enemy.telegraphTimer = enemy.stateTimer;
-          if (enemy.telegraph) {
-            enemy.telegraph = tickTelegraph(enemy.telegraph, dt);
+          if (!paused) {
+            enemy.stateTimer -= dt;
+            enemy.telegraphTimer = enemy.stateTimer;
           }
-          if (enemy.stateTimer <= 0) {
+          if (enemy.telegraph) {
+            enemy.telegraph = advanceTelegraph(enemy.telegraph, dt, paused);
+          }
+          if (!paused && enemy.stateTimer <= 0) {
             enemy.state = 'attack';
             enemy.stateTimer = 0.3;
             const tel = enemy.telegraph;

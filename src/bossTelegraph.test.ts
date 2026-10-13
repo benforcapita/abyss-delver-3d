@@ -1,15 +1,18 @@
 import {describe, expect, it} from 'vitest';
 import {
+  advanceTelegraph,
   BOSS_TELEGRAPH_RADIUS,
   BOSS_TELEGRAPH_WINDUP,
   isInsideRing,
   isTelegraphComplete,
   meleeHitLands,
+  shouldResolveTelegraph,
   startTelegraph,
   telegraphProgress,
   tickTelegraph,
   usesGroundTelegraph,
 } from './bossTelegraph';
+import {isGamePaused} from './pause';
 
 describe('bossTelegraph', () => {
   describe('isInsideRing', () => {
@@ -84,6 +87,83 @@ describe('bossTelegraph', () => {
       const next = tickTelegraph(t, 0.1);
       expect(next).not.toBe(t);
       expect(t.elapsed).toBe(0);
+    });
+  });
+
+  describe('advanceTelegraph', () => {
+    it('returns the same object and does not advance elapsed while paused', () => {
+      const t = tickTelegraph(startTelegraph(0, 0), 0.3);
+      const next = advanceTelegraph(t, 0.5, true);
+      expect(next).toBe(t);
+      expect(next.elapsed).toBeCloseTo(0.3);
+      expect(telegraphProgress(next)).toBeCloseTo(0.3 / BOSS_TELEGRAPH_WINDUP);
+    });
+    it('advances elapsed when not paused', () => {
+      let t = startTelegraph(0, 0);
+      t = advanceTelegraph(t, BOSS_TELEGRAPH_WINDUP / 2, false);
+      expect(t.elapsed).toBeCloseTo(BOSS_TELEGRAPH_WINDUP / 2);
+      t = advanceTelegraph(t, BOSS_TELEGRAPH_WINDUP / 2, false);
+      expect(t.elapsed).toBe(BOSS_TELEGRAPH_WINDUP);
+      expect(isTelegraphComplete(t)).toBe(true);
+    });
+  });
+
+  describe('shouldResolveTelegraph', () => {
+    it('is false while paused even when the windup completed', () => {
+      const t = tickTelegraph(startTelegraph(0, 0), BOSS_TELEGRAPH_WINDUP);
+      expect(isTelegraphComplete(t)).toBe(true);
+      expect(shouldResolveTelegraph(t, true)).toBe(false);
+    });
+    it('matches isTelegraphComplete when not paused', () => {
+      const incomplete = startTelegraph(0, 0);
+      const complete = tickTelegraph(startTelegraph(0, 0), BOSS_TELEGRAPH_WINDUP);
+      expect(shouldResolveTelegraph(incomplete, false)).toBe(false);
+      expect(shouldResolveTelegraph(complete, false)).toBe(true);
+    });
+  });
+
+  describe('pause integration (isGamePaused)', () => {
+    const pausedState = {
+      status: 'PLAYING',
+      menuOpen: true,
+      howToOpen: false,
+      floorSummaryOpen: false,
+    };
+    const playingState = {
+      status: 'PLAYING',
+      menuOpen: false,
+      howToOpen: false,
+      floorSummaryOpen: false,
+    };
+
+    it('freezes telegraph progress while an overlay is open', () => {
+      const paused = isGamePaused(pausedState);
+      expect(paused).toBe(true);
+      let t = startTelegraph(0, 0);
+      const before = t;
+      t = advanceTelegraph(t, 0.4, paused);
+      expect(t).toBe(before);
+      expect(t.elapsed).toBe(0);
+      expect(shouldResolveTelegraph(t, paused)).toBe(false);
+    });
+
+    it('advances and resolves normally while playing with no overlays', () => {
+      const paused = isGamePaused(playingState);
+      expect(paused).toBe(false);
+      let t = startTelegraph(0, 0);
+      t = advanceTelegraph(t, BOSS_TELEGRAPH_WINDUP, paused);
+      expect(t.elapsed).toBe(BOSS_TELEGRAPH_WINDUP);
+      expect(shouldResolveTelegraph(t, paused)).toBe(true);
+    });
+
+    it('a completed windup still cannot resolve while paused', () => {
+      const complete = tickTelegraph(startTelegraph(0, 0), BOSS_TELEGRAPH_WINDUP);
+      expect(shouldResolveTelegraph(complete, isGamePaused(pausedState))).toBe(
+        false,
+      );
+      expect(shouldResolveTelegraph(complete, isGamePaused(playingState))).toBe(
+        true,
+      );
     });
   });
 
