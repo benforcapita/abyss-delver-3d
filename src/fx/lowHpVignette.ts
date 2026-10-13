@@ -68,12 +68,18 @@ export function readPrefersReducedMotion(): boolean {
  * Writes the overlay from a ref. Callers must not mirror this into React
  * state — the pulse is a CSS animation, so a healthy frame loop never
  * re-renders to animate it.
+ *
+ * `paused` is the result of `isGamePaused()`. While it is true the pulse
+ * keeps its current frame (`animation-play-state: paused`) and resumes
+ * when the game unpauses. The shorthand is assigned first because it
+ * resets the play state.
  */
 export function applyLowHpVignette(
   el: HTMLElement | null,
   hp: number,
   maxHp: number,
   reducedMotion: boolean,
+  paused = false,
 ): void {
   if (!el) return;
   const paint = vignettePaint(hp, maxHp, reducedMotion);
@@ -83,32 +89,35 @@ export function applyLowHpVignette(
   el.style.animation = paint.pulse
     ? `ad-low-hp-pulse ${VIGNETTE_PULSE_MS}ms ease-in-out infinite`
     : 'none';
+  el.style.animationPlayState = paint.pulse && paused ? 'paused' : 'running';
 }
 
 /**
- * Paints `ref` when HP changes, and again if the reduced-motion preference
- * flips. HP ticks that do not change the ratio do not touch the DOM.
+ * Paints `ref` when HP, visibility, or pause changes, and again if the
+ * reduced-motion preference flips. Pause is a menu flag, not a per-frame
+ * value, so the play-state write does not run every tick.
  */
 export function useLowHpVignette(
   ref: RefObject<HTMLElement | null>,
   hp: number,
   maxHp: number,
   active = true,
+  paused = false,
 ): void {
   useLayoutEffect(() => {
     const el = ref.current;
     const paint = () => {
       if (!active) {
         const full = maxHp > 0 ? maxHp : 1;
-        applyLowHpVignette(el, full, full, true);
+        applyLowHpVignette(el, full, full, true, paused);
         return;
       }
-      applyLowHpVignette(el, hp, maxHp, readPrefersReducedMotion());
+      applyLowHpVignette(el, hp, maxHp, readPrefersReducedMotion(), paused);
     };
     paint();
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     mq.addEventListener?.('change', paint);
     return () => mq.removeEventListener?.('change', paint);
-  }, [ref, hp, maxHp, active]);
+  }, [ref, hp, maxHp, active, paused]);
 }

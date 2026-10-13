@@ -173,6 +173,7 @@ export default function App() {
     playerStats.hp,
     playerStats.maxHp,
     gameState.status === 'PLAYING',
+    paused,
   );
 
   // Action refs triggered from UI & mobile controls

@@ -67,6 +67,7 @@ describe('applyLowHpVignette', () => {
     const el = {
       style: {
         animation: '',
+        animationPlayState: '',
         setProperty(name: string, value: string) {
           props.set(name, value);
         },
@@ -96,5 +97,23 @@ describe('applyLowHpVignette', () => {
 
   it('ignores a missing element', () => {
     expect(() => applyLowHpVignette(null, 0, 100, false)).not.toThrow();
+  });
+
+  it('pauses the CSS pulse while the game is paused, then resumes it', () => {
+    const {el} = fakeEl();
+    applyLowHpVignette(el, 12, 100, false, true);
+    expect(el.style.animation).toContain(`${VIGNETTE_PULSE_MS}ms`);
+    expect(el.style.animationPlayState).toBe('paused');
+
+    applyLowHpVignette(el, 12, 100, false, false);
+    expect(el.style.animation).toContain(`${VIGNETTE_PULSE_MS}ms`);
+    expect(el.style.animationPlayState).toBe('running');
+  });
+
+  it('does not arm a pulse to pause when reduced motion hides it', () => {
+    const {el} = fakeEl();
+    applyLowHpVignette(el, 12, 100, true, true);
+    expect(el.style.animation).toBe('none');
+    expect(el.style.animationPlayState).toBe('running');
   });
 });
