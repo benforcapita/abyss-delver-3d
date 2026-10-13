@@ -14,8 +14,10 @@ import {
   usesGroundTelegraph,
 } from './bossTelegraph';
 import {BossTelegraph} from './components/BossTelegraph';
+import {cameraMoveVector} from './cameraBasis';
 import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
 import {applyCameraLocalPose, createFlashMap, holdHitFlashes, PLAYER_FLASH_ID, syncHitFlashes, triggerHitFlash} from './fx/hitFlash';
+import {createHitStopState, isHeavyHit, stepHitStop, triggerHitStop} from './fx/hitStop';
 import {
   createShakeState,
   isScreenShakeEnabled,
@@ -241,6 +243,7 @@ function DungeonScene({
   const dashDir = useRef<THREE.Vector3>(new THREE.Vector3());
   const screenShake = useRef(createShakeState());
   const lastShake = useRef({x: 0, y: 0});
+  const hitStop = useRef(createHitStopState());
   const hitFlashes = useRef(createFlashMap());
   const lastFxNow = useRef(0);
   const flashTargets = useRef(new Map<string, THREE.Object3D>());
@@ -374,6 +377,7 @@ function DungeonScene({
   };
 
   // Player Melee Sword Strike
+  const confirmHeldRef = useRef(false);
   const executeAttack = () => {
     if (playerStats.attackCooldown > 0) return;
     window.dispatchEvent(new CustomEvent('player-attack')); // Lightweight hook used by e2e to count attacks
@@ -413,6 +417,7 @@ function DungeonScene({
           enemy.stateTimer = 0.2;
           triggerHitFlash(hitFlashes.current, enemy.id, performance.now());
           triggerScreenShake(screenShake.current, outgoingShakeAmount(dmg, isCrit));
+          if (isHeavyHit(dmg, isCrit)) triggerHitStop(hitStop.current);
 
           spawnFloatingText(
             isCrit ? `${dmg}! CRIT` : `${dmg}`,
@@ -663,9 +668,10 @@ function DungeonScene({
         applied.y = 0;
       }
       stepScreenShake(screenShake.current, 0, {enabled: isScreenShakeEnabled(), paused: true});
+      stepHitStop(hitStop.current, delta, paused);
       return;
     }
-    const dt = frameDelta(delta, wasPausedRef.current);
+    const dt = stepHitStop(hitStop.current, frameDelta(delta, wasPausedRef.current), paused).dt;
     wasPausedRef.current = false;
 
     if (debugCheats.killBossRequested) {
@@ -711,9 +717,11 @@ function DungeonScene({
     // Input actions from useInput
     const input = inputRef.current?.actions;
     if (input) {
-      if (input.confirm && !triggerAttackRef.current) {
+      // Edge-triggered: LMB (bound 'Mouse0') / attack key attacks once per press.
+      if (input.confirm && !confirmHeldRef.current && !triggerAttackRef.current) {
         executeAttack();
       }
+      confirmHeldRef.current = input.confirm;
       if (input.tap) {
         // pointer click / tap attack
         executeAttack();
@@ -763,9 +771,6 @@ function DungeonScene({
     const baseSpeed =
       getConfig('playerSpeed') + (playerStats.equippedRing.moveSpeedBonus || 0);
 
-    const cosY = Math.cos(playerYaw.current);
-    const sinY = Math.sin(playerYaw.current);
-
     if (isDashing.current) {
       dashTimer.current -= dt;
       const dashSpeed = baseSpeed * 2.8;
@@ -775,13 +780,10 @@ function DungeonScene({
         isDashing.current = false;
       }
     } else if (isMoving) {
-      const len = Math.hypot(moveX, moveZ);
-      const nx = moveX / len;
-      const nz = moveZ / len;
-
-      // Transform movement relative to camera yaw
-      const worldDx = (nx * cosY - nz * sinY) * baseSpeed * dt;
-      const worldDz = (nx * sinY + nz * cosY) * baseSpeed * dt;
+      // Camera-relative: W toward where the camera looks (AD-24.10).
+      const move = cameraMoveVector(moveX, moveZ, playerYaw.current);
+      const worldDx = move.x * baseSpeed * dt;
+      const worldDz = move.z * baseSpeed * dt;
 
       // Wall collision check against grid
       const TILE_SIZE = 4;
@@ -1025,6 +1027,7 @@ function DungeonScene({
               enemy.stateTimer = 0.2;
               triggerHitFlash(hitFlashes.current, enemy.id, performance.now());
               triggerScreenShake(screenShake.current, outgoingShakeAmount(dmg, isCrit));
+              if (isHeavyHit(dmg, isCrit)) triggerHitStop(hitStop.current);
 
               spawnFloatingText(
                 isCrit ? `${dmg}! CRIT` : `${dmg}`,
@@ -1102,6 +1105,7 @@ function DungeonScene({
     gameAudio.playMeleePunch();
     triggerHitFlash(hitFlashes.current, PLAYER_FLASH_ID, performance.now());
     triggerScreenShake(screenShake.current, playerHurtShake(finalDmg));
+    if (isHeavyHit(finalDmg)) triggerHitStop(hitStop.current);
 
     setPlayerStats((prev) => {
       const newHp = applyDamage(prev.hp, finalDmg, debugCheats.godMode);
