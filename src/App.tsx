@@ -37,6 +37,7 @@ import BackgroundMusic from './utils/BackgroundMusic';
 import {GameState, MenuOverlay, Overlay, useIsMobile} from './utils/helper';
 import {sdk, useGameLifecycle} from './platform/lifecycle';
 import {FINAL_FLOOR, floorClearScore, isVictory, victoryBonus} from './rules';
+import {isGamePaused} from './pause';
 
 interface CustomWindow extends Window {
   canHandleBackKey?: boolean;
@@ -138,6 +139,13 @@ export default function App() {
   const [bossDefeated, setBossDefeated] = useState(false);
   const [victoryBonusAmount, setVictoryBonusAmount] = useState(0);
   const victoryLatchedRef = useRef(false);
+
+  const paused = isGamePaused({
+    status: gameState.status,
+    menuOpen: isGameMenuOpen,
+    howToOpen: isHowToPlayOpen,
+    floorSummaryOpen: showFloorSummary,
+  });
 
   // Action refs triggered from UI & mobile controls
   const triggerAttackRef = useRef(false);
@@ -389,6 +397,7 @@ export default function App() {
       {/* 3D WebGL Canvas Viewport */}
       <div className="flex-1 w-full min-h-0 relative flex items-center justify-center">
         <Game
+          paused={paused}
           gameState={gameState}
           setGameState={setGameState}
           gameStateRef={gameStateRef}
