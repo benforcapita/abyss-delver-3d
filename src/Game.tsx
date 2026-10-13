@@ -16,6 +16,7 @@ import {
 import {BossTelegraph} from './components/BossTelegraph';
 import {cameraMoveVector} from './cameraBasis';
 import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
+import {dashDirection, moveInputFrom} from './dash';
 import {applyCameraLocalPose, createFlashMap, holdHitFlashes, PLAYER_FLASH_ID, syncHitFlashes, triggerHitFlash} from './fx/hitFlash';
 import {createHitStopState, isHeavyHit, stepHitStop, triggerHitStop} from './fx/hitStop';
 import {
@@ -535,7 +536,11 @@ function DungeonScene({
     dashTimer.current = 0.22;
 
     const pYaw = playerYaw.current;
-    dashDir.current.set(-Math.sin(pYaw), 0, -Math.cos(pYaw)).normalize();
+    const dash = dashDirection(
+      moveInputFrom(inputRef.current?.actions, joystickMoveRef.current),
+      pYaw,
+    );
+    dashDir.current.set(dash.x, 0, dash.z);
     spawnSparks(
       [playerPos.current.x, playerPos.current.y - 0.5, playerPos.current.z],
       '#60a5fa',
