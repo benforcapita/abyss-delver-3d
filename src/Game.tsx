@@ -433,6 +433,24 @@ function DungeonScene({
       )
       .normalize();
 
+    // Aim assist: nudge toward the closest live enemy within a narrow cone.
+    if (getConfig('enableAutoAimAssist')) {
+      let best = 0.94;
+      const aimDir = new THREE.Vector3();
+      enemiesRef.current.forEach((enemy) => {
+        if (enemy.hp <= 0) return;
+        scratchVec1.set(enemy.pos[0], enemy.pos[1] + 0.8, enemy.pos[2]);
+        if (pPos.distanceTo(scratchVec1) > 20) return;
+        scratchVec2.subVectors(scratchVec1, pPos).normalize();
+        const dot = forwardVec.dot(scratchVec2);
+        if (dot > best) {
+          best = dot;
+          aimDir.copy(scratchVec2);
+        }
+      });
+      if (best > 0.94) forwardVec.copy(aimDir);
+    }
+
     const speed = 18.0;
     const newProj: Projectile = {
       id: `proj_p_${Date.now()}_${Math.random()}`,
