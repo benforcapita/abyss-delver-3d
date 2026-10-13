@@ -9,6 +9,7 @@ import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
 import {generateDungeonFloor} from './dungeonGenerator';
 import {createOneShotLatch} from './floorLatch';
 import {InputSnapshot, useInput} from './input';
+import {syncMinimapBridge, type MinimapBridge} from './minimap';
 import {enemyKillScore, isGameOver} from './rules';
 import {
   ChestEntity,
@@ -46,6 +47,7 @@ interface GameProps {
   currentBossRef: MutableRefObject<EnemyEntity | null>;
   activeEnemiesCountRef: MutableRefObject<number>;
   floorDataRef: MutableRefObject<DungeonFloorData | null>;
+  minimapBridgeRef: MutableRefObject<MinimapBridge>;
 }
 
 // Scratch temporaries for zero-allocation game loop
@@ -162,6 +164,7 @@ function DungeonScene({
   currentBossRef,
   activeEnemiesCountRef,
   floorDataRef,
+  minimapBridgeRef,
 }: GameProps & {inputRef: MutableRefObject<InputSnapshot>}): React.ReactElement {
   const {camera, gl} = useThree();
 
@@ -254,6 +257,17 @@ function DungeonScene({
     camera.position.set(sp[0], 1.5, sp[2]);
     playerYaw.current = 0;
     playerPitch.current = 0;
+    syncMinimapBridge(minimapBridgeRef.current, {
+      tiles: generated.floorData.tiles,
+      rooms: generated.floorData.rooms,
+      gridSize: generated.floorData.gridSize,
+      playerX: sp[0],
+      playerZ: sp[2],
+      playerYaw: 0,
+      enemies: generated.enemies,
+      chests: generated.floorData.chests,
+      stairs: generated.floorData.stairs,
+    });
 
     gameAudio.playFootstepStone();
   }, [floorLevel]);
@@ -994,6 +1008,18 @@ function DungeonScene({
       });
       setParticles(activeParts);
     }
+
+    syncMinimapBridge(minimapBridgeRef.current, {
+      tiles: floorData.tiles,
+      rooms: floorData.rooms,
+      gridSize: floorData.gridSize,
+      playerX: playerPos.current.x,
+      playerZ: playerPos.current.z,
+      playerYaw: playerYaw.current,
+      enemies: enemiesRef.current,
+      chests: chestsRef.current,
+      stairs: floorData.stairs,
+    });
   });
 
   // Player Damage Application
