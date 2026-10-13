@@ -6,6 +6,7 @@ import type {MutableRefObject} from 'react';
 import React, {Suspense, useEffect, useMemo, useRef, useState} from 'react';
 import * as THREE from 'three';
 import {getConfig} from './constants';
+import {roomClearChests} from './drops';
 import {generateDungeonFloor} from './dungeonGenerator';
 import {InputSnapshot, useInput} from './input';
 import {enemyKillScore, isGameOver} from './rules';
@@ -572,6 +573,12 @@ function DungeonScene({
         enemy.pos[1] + 0.8,
         enemy.pos[2],
       ], '#f59e0b');
+    }
+
+    const roomDrops = roomClearChests(floorData, enemiesRef.current, enemy);
+    if (roomDrops.length) {
+      setChests((prev) => [...prev, ...roomDrops]);
+      spawnFloatingText('Potion!', roomDrops[0].pos, '#22c55e');
     }
 
     if (enemy.isBoss) {
