@@ -24,8 +24,12 @@ import {
 } from 'lucide-react';
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {AVAILABLE_MUSIC_TRACKS, getConfig} from './constants';
+import {ActionButtons} from './components/ActionButtons';
+import {VirtualJoystick} from './components/VirtualJoystick';
 import {Game} from './Game';
+import {Minimap} from './components/Minimap';
 import {RotatePrompt} from './components/RotatePrompt';
+import {createMinimapBridge} from './minimap';
 import {
   DungeonFloorData,
   EnemyEntity,
@@ -35,12 +39,20 @@ import {
 } from './types';
 import {formatTime, gameAudio} from './utils';
 import BackgroundMusic from './utils/BackgroundMusic';
-import {GameState, MenuOverlay, Overlay, useIsMobile} from './utils/helper';
+import {
+  BestScoreLine,
+  GameState,
+  MenuOverlay,
+  Overlay,
+  useIsMobile,
+} from './utils/helper';
 import {sdk, useGameLifecycle} from './platform/lifecycle';
 import {getSettings, saveSettings, subscribeSettings} from './platform/settings';
 import {actionsForCode} from './platform/keybindings';
 import {SettingsPanel} from './components/SettingsPanel';
 import {FINAL_FLOOR, floorClearScore, isVictory, victoryBonus} from './rules';
+import {loadBest, saveBest, type BestScore} from './bestScore';
+import {isGamePaused} from './pause';
 
 interface CustomWindow extends Window {
   canHandleBackKey?: boolean;
@@ -150,6 +162,13 @@ export default function App() {
   const [victoryBonusAmount, setVictoryBonusAmount] = useState(0);
   const victoryLatchedRef = useRef(false);
 
+  const paused = isGamePaused({
+    status: gameState.status,
+    menuOpen: isGameMenuOpen,
+    howToOpen: isHowToPlayOpen,
+    floorSummaryOpen: showFloorSummary,
+  });
+
   // Action refs triggered from UI & mobile controls
   const triggerAttackRef = useRef(false);
   const triggerSpellRef = useRef(false);
@@ -163,6 +182,23 @@ export default function App() {
   const [bossHudState, setBossHudState] = useState<EnemyEntity | null>(null);
   const activeEnemiesCountRef = useRef(0);
   const floorDataRef = useRef<DungeonFloorData | null>(null);
+  const minimapBridgeRef = useRef(createMinimapBridge());
+
+  // Best score (persisted in localStorage `ad3d.best.v1`). Saved once per
+  // terminal transition (GAME_OVER / VICTORY), latched until a new run starts.
+  const [best, setBest] = useState<BestScore>(() => loadBest());
+  const bestSavedRef = useRef(false);
+  useEffect(() => {
+    const status = gameState.status;
+    if (status === 'PLAYING') {
+      bestSavedRef.current = false;
+      return;
+    }
+    if ((status === 'GAME_OVER' || status === 'VICTORY') && !bestSavedRef.current) {
+      bestSavedRef.current = true;
+      setBest(saveBest({score: gameState.score, floor: gameState.level}));
+    }
+  }, [gameState.status, gameState.score, gameState.level]);
 
   // Back key support
   useEffect(() => {
@@ -405,6 +441,7 @@ export default function App() {
       {/* 3D WebGL Canvas Viewport */}
       <div className="flex-1 w-full min-h-0 relative flex items-center justify-center">
         <Game
+          paused={paused}
           gameState={gameState}
           setGameState={setGameState}
           gameStateRef={gameStateRef}
@@ -422,6 +459,7 @@ export default function App() {
           currentBossRef={currentBossRef}
           activeEnemiesCountRef={activeEnemiesCountRef}
           floorDataRef={floorDataRef}
+          minimapBridgeRef={minimapBridgeRef}
         />
 
         {/* HUD: Active Gameplay Safe Zones */}
@@ -455,7 +493,7 @@ export default function App() {
 
               {/* Top Center: Floor Boss Health Bar */}
               {bossHudState && bossHudState.hp > 0 && (
-                <div className="flex-1 max-w-xs md:max-w-md mx-2 flex flex-col items-center animate-fade-in">
+                <div className="flex-1 min-w-0 max-w-xs md:max-w-md mx-2 flex flex-col items-center animate-fade-in">
                   <div className="flex items-center gap-2 mb-1">
                     <Flame className="w-4 h-4 text-red-500" />
                     <span className="text-xs md:text-sm font-black tracking-widest text-red-400 uppercase">
@@ -473,14 +511,17 @@ export default function App() {
                 </div>
               )}
 
-              {/* TOP RIGHT: Game Menu Trigger Button (Reserved Safe Zone) */}
-              <div className="pointer-events-auto">
-                <button
-                  onClick={() => setIsGameMenuOpen(true)}
-                  className="bg-black/80 hover:bg-zinc-800 active:scale-95 text-amber-400 border border-amber-500/50 px-3 py-1.5 rounded-lg font-bold text-xs md:text-sm flex items-center gap-1.5 shadow-xl transition-all">
-                  <MenuIcon className="w-4 h-4" />
-                  <span>MENU</span>
-                </button>
+              {/* TOP RIGHT: menu, then the minimap in its own slot under it */}
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                <div className="pointer-events-auto">
+                  <button
+                    onClick={() => setIsGameMenuOpen(true)}
+                    className="bg-black/80 hover:bg-zinc-800 active:scale-95 text-amber-400 border border-amber-500/50 px-3 py-1.5 rounded-lg font-bold text-xs md:text-sm flex items-center gap-1.5 shadow-xl transition-all">
+                    <MenuIcon className="w-4 h-4" />
+                    <span>MENU</span>
+                  </button>
+                </div>
+                <Minimap bridge={minimapBridgeRef} active />
               </div>
             </div>
 
@@ -511,9 +552,16 @@ export default function App() {
             )}
 
             {/* Bottom Bar: Health, Mana, Stamina, Equipment & Action Controls */}
-            <div className="w-full flex flex-col md:flex-row items-end md:items-center justify-between gap-3">
+            <div
+              className={
+                isMobile
+                  ? 'w-full flex justify-center'
+                  : 'w-full flex flex-col md:flex-row items-end md:items-center justify-between gap-3'
+              }>
               {/* Health & Mana Orbs / Gauges */}
-              <div className="flex flex-col gap-1.5 bg-black/80 backdrop-blur border border-zinc-800 p-2.5 rounded-xl shadow-xl w-48 md:w-56">
+              <div
+                data-testid="hud-vitals"
+                className="flex flex-col gap-1.5 bg-black/80 backdrop-blur border border-zinc-800 p-2.5 rounded-xl shadow-xl w-48 md:w-56">
                 {/* Health Bar */}
                 <div>
                   <div className="flex justify-between text-[11px] font-bold mb-0.5 text-red-400">
@@ -572,7 +620,8 @@ export default function App() {
               </div>
 
               {/* Equipment Hotbar Display */}
-              <div className="hidden md:flex items-center gap-2 bg-black/80 backdrop-blur border border-zinc-800 p-2 rounded-xl">
+              {!isMobile && (
+                <div className="hidden md:flex items-center gap-2 bg-black/80 backdrop-blur border border-zinc-800 p-2 rounded-xl">
                 <div
                   className={`border px-2.5 py-1.5 rounded-lg flex items-center gap-2 ${getRarityBadge(
                     playerStats.equippedWeapon.rarity,
@@ -614,7 +663,8 @@ export default function App() {
                     <div className="text-[9px] text-red-300">Key: Q / 1</div>
                   </div>
                 </button>
-              </div>
+                </div>
+              )}
 
               {/* Desktop Key Controls Helper */}
               {!isMobile && (
@@ -656,90 +706,16 @@ export default function App() {
 
         {/* Mobile Virtual Joystick & Action Buttons Overlay */}
         {isMobile && gameState.status === 'PLAYING' && (
-          <div className="absolute inset-x-0 bottom-3 px-6 pointer-events-none flex justify-between items-end z-30 hud-safe-controls">
-            {/* Left Virtual D-Pad / Touch Mover */}
-            <div className="pointer-events-auto relative w-28 h-28 bg-black/60 rounded-full border-2 border-zinc-700/60 flex items-center justify-center touch-none">
-              <div className="grid grid-cols-3 gap-1">
-                <div />
-                <button
-                  onPointerDown={() => (joystickMoveRef.current.y = 1)}
-                  onPointerUp={() => (joystickMoveRef.current.y = 0)}
-                  className="w-8 h-8 bg-zinc-800/80 active:bg-amber-500 rounded text-xs font-bold flex items-center justify-center">
-                  ▲
-                </button>
-                <div />
-                <button
-                  onPointerDown={() => (joystickMoveRef.current.x = -1)}
-                  onPointerUp={() => (joystickMoveRef.current.x = 0)}
-                  className="w-8 h-8 bg-zinc-800/80 active:bg-amber-500 rounded text-xs font-bold flex items-center justify-center">
-                  ◀
-                </button>
-                <div className="w-8 h-8 flex items-center justify-center text-[9px] text-zinc-500 font-bold">
-                  MOVE
-                </div>
-                <button
-                  onPointerDown={() => (joystickMoveRef.current.x = 1)}
-                  onPointerUp={() => (joystickMoveRef.current.x = 0)}
-                  className="w-8 h-8 bg-zinc-800/80 active:bg-amber-500 rounded text-xs font-bold flex items-center justify-center">
-                  ▶
-                </button>
-                <div />
-                <button
-                  onPointerDown={() => (joystickMoveRef.current.y = -1)}
-                  onPointerUp={() => (joystickMoveRef.current.y = 0)}
-                  className="w-8 h-8 bg-zinc-800/80 active:bg-amber-500 rounded text-xs font-bold flex items-center justify-center">
-                  ▼
-                </button>
-                <div />
-              </div>
-            </div>
-
-            {/* Right Action Buttons Cluster */}
-            <div className="pointer-events-auto flex flex-col items-end gap-2">
-              <div className="flex gap-2">
-                {/* Interact Button */}
-                <button
-                  onClick={() => (triggerInteractRef.current = true)}
-                  className="w-12 h-12 bg-amber-900/80 active:scale-95 border-2 border-amber-500 text-amber-300 rounded-full font-bold text-xs flex flex-col items-center justify-center shadow-lg">
-                  <Sparkles className="w-4 h-4" />
-                  <span className="text-[8px]">OPEN</span>
-                </button>
-
-                {/* Fireball Spell Button */}
-                <button
-                  onClick={() => (triggerSpellRef.current = true)}
-                  className="w-12 h-12 bg-sky-950/80 active:scale-95 border-2 border-sky-400 text-sky-200 rounded-full font-bold text-xs flex flex-col items-center justify-center shadow-lg">
-                  <Flame className="w-4 h-4 fill-sky-400" />
-                  <span className="text-[8px]">SPELL</span>
-                </button>
-
-                {/* Drink Potion */}
-                <button
-                  onClick={drinkPotion}
-                  className="w-12 h-12 bg-red-950/80 active:scale-95 border-2 border-red-500 text-red-200 rounded-full font-bold text-xs flex flex-col items-center justify-center shadow-lg">
-                  <Heart className="w-4 h-4 fill-red-500" />
-                  <span className="text-[8px]">x{playerStats.potions}</span>
-                </button>
-              </div>
-
-              <div className="flex gap-2 items-center">
-                {/* Dash Button */}
-                <button
-                  onClick={() => (triggerDashRef.current = true)}
-                  className="w-12 h-12 bg-emerald-950/80 active:scale-95 border-2 border-emerald-500 text-emerald-300 rounded-full font-bold text-xs flex flex-col items-center justify-center shadow-lg">
-                  <Zap className="w-4 h-4" />
-                  <span className="text-[8px]">DASH</span>
-                </button>
-
-                {/* Primary Sword Attack Button */}
-                <button
-                  onClick={() => (triggerAttackRef.current = true)}
-                  className="w-16 h-16 bg-gradient-to-tr from-amber-600 to-yellow-400 active:scale-95 text-black rounded-full font-black text-sm flex flex-col items-center justify-center shadow-2xl border-2 border-white">
-                  <Sword className="w-6 h-6 fill-black" />
-                  <span className="text-[9px]">SLASH</span>
-                </button>
-              </div>
-            </div>
+          <div className="absolute inset-x-0 bottom-3 px-6 pointer-events-none flex justify-between items-end z-30 hud-safe-controls" data-testid="mobile-controls">
+            <VirtualJoystick moveRef={joystickMoveRef} />
+            <ActionButtons
+              onAttack={() => (triggerAttackRef.current = true)}
+              onSpell={() => (triggerSpellRef.current = true)}
+              onDash={() => (triggerDashRef.current = true)}
+              onInteract={() => (triggerInteractRef.current = true)}
+              onPotion={drinkPotion}
+              potions={playerStats.potions}
+            />
           </div>
         )}
       </div>
@@ -760,6 +736,8 @@ export default function App() {
               Conquer 5 procedurally generated dungeon depths. Slay fearsome
               bosses, collect tiered enchanted loot, and survive the Abyss.
             </p>
+
+            <BestScoreLine best={best} className="mb-4" />
 
             <button
               onClick={initGame}
@@ -980,8 +958,9 @@ export default function App() {
           actionLabel="NEW ADVENTURE"
           onAction={initGame}
           icon={<Trophy className="w-6 h-6 text-black" />}
-          tone="victory"
-        />
+          tone="victory">
+          <BestScoreLine best={best} className="mb-6" />
+        </Overlay>
       )}
 
       {/* Game Over Screen */}
@@ -992,8 +971,9 @@ export default function App() {
           actionLabel="TRY AGAIN"
           onAction={initGame}
           icon={<RotateCw className="w-6 h-6 text-black" />}
-          tone="danger"
-        />
+          tone="danger">
+          <BestScoreLine best={best} className="mb-6" />
+        </Overlay>
       )}
     </div>
   );

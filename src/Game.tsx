@@ -6,8 +6,13 @@ import type {MutableRefObject} from 'react';
 import React, {Suspense, useEffect, useMemo, useRef, useState} from 'react';
 import * as THREE from 'three';
 import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
+import {FloatingTextStore} from './floatingText';
+import {FloatingTextSprite} from './components/FloatingTextSprite';
+import {roomClearChests} from './drops';
 import {generateDungeonFloor} from './dungeonGenerator';
+import {createOneShotLatch} from './floorLatch';
 import {InputSnapshot, useInput} from './input';
+import {syncMinimapBridge, type MinimapBridge} from './minimap';
 import {enemyKillScore, isGameOver} from './rules';
 import {
   ChestEntity,
@@ -24,8 +29,10 @@ import {
 } from './types';
 import {gameAudio} from './utils';
 import {GameState} from './utils/helper';
+import {frameDelta} from './pause';
 
 interface GameProps {
+  paused: boolean;
   gameState: GameState;
   setGameState: React.Dispatch<React.SetStateAction<GameState>>;
   gameStateRef: MutableRefObject<GameState>;
@@ -43,6 +50,7 @@ interface GameProps {
   currentBossRef: MutableRefObject<EnemyEntity | null>;
   activeEnemiesCountRef: MutableRefObject<number>;
   floorDataRef: MutableRefObject<DungeonFloorData | null>;
+  minimapBridgeRef: MutableRefObject<MinimapBridge>;
 }
 
 // Scratch temporaries for zero-allocation game loop
@@ -141,6 +149,7 @@ function createDungeonWallTexture(): THREE.CanvasTexture {
 
 /** Inner Scene Component handling Camera, Combat, Entities, Lighting, and FX */
 function DungeonScene({
+  paused,
   gameState,
   setGameState,
   inputRef,
@@ -158,6 +167,7 @@ function DungeonScene({
   currentBossRef,
   activeEnemiesCountRef,
   floorDataRef,
+  minimapBridgeRef,
 }: GameProps & {inputRef: MutableRefObject<InputSnapshot>}): React.ReactElement {
   const {camera, gl} = useThree();
 
@@ -167,6 +177,8 @@ function DungeonScene({
 
   // Floor and mob data
   const floorLevel = gameState.level;
+  const [stairsUnlocked, setStairsUnlocked] = useState(false);
+  const floorLatchRef = useRef(createOneShotLatch());
   const [floorData, setFloorData] = useState<DungeonFloorData>(() => {
     const {floorData} = generateDungeonFloor(floorLevel, 0);
     return floorData;
@@ -194,8 +206,7 @@ function DungeonScene({
   projectilesRef.current = projectiles;
 
   const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
-  const floatingTextsRef = useRef<FloatingText[]>([]);
-  floatingTextsRef.current = floatingTexts;
+  const textStore = useRef(new FloatingTextStore()).current;
 
   const [particles, setParticles] = useState<SparkParticle[]>([]);
   const particlesRef = useRef<SparkParticle[]>([]);
@@ -220,6 +231,7 @@ function DungeonScene({
 
   // Latch so GAME_OVER status & defeat motif fire exactly once per run
   const gameOverLatchedRef = useRef(false);
+  const wasPausedRef = useRef(true);
 
   // Initialize floor layout and player spawn
   useEffect(() => {
@@ -230,12 +242,15 @@ function DungeonScene({
 
     const generated = generateDungeonFloor(floorLevel, totalPower, Date.now() + floorLevel * 1000);
     setFloorData(generated.floorData);
+    setStairsUnlocked(false);
+    floorLatchRef.current.reset();
     floorDataRef.current = generated.floorData;
     setEnemies(generated.enemies);
     setChests(generated.floorData.chests);
     setShrines(generated.floorData.shrines);
     setTraps(generated.floorData.traps);
     setProjectiles([]);
+    textStore.clear();
     setFloatingTexts([]);
     setParticles([]);
 
@@ -245,6 +260,17 @@ function DungeonScene({
     camera.position.set(sp[0], 1.5, sp[2]);
     playerYaw.current = 0;
     playerPitch.current = 0;
+    syncMinimapBridge(minimapBridgeRef.current, {
+      tiles: generated.floorData.tiles,
+      rooms: generated.floorData.rooms,
+      gridSize: generated.floorData.gridSize,
+      playerX: sp[0],
+      playerZ: sp[2],
+      playerYaw: 0,
+      enemies: generated.enemies,
+      chests: generated.floorData.chests,
+      stairs: generated.floorData.stairs,
+    });
 
     gameAudio.playFootstepStone();
   }, [floorLevel]);
@@ -299,18 +325,8 @@ function DungeonScene({
     color = '#ffffff',
     isCrit = false,
   ) => {
-    const id = `ft_${Date.now()}_${Math.random()}`;
-    const newText: FloatingText = {
-      id,
-      text,
-      pos: [pos[0], pos[1] + 0.5, pos[2]],
-      color,
-      life: 0,
-      maxLife: 1.2,
-      scale: isCrit ? 1.4 : 1.0,
-      isCrit,
-    };
-    setFloatingTexts((prev) => [...prev.slice(-15), newText]);
+    textStore.spawn(text, pos, color, isCrit);
+    setFloatingTexts([...textStore.list]);
   };
 
   // Spawn spark hit particles
@@ -556,12 +572,11 @@ function DungeonScene({
 
     // Check Stairs / Floor Exit Portal
     const stairs = floorData.stairs;
-    if (stairs.unlocked) {
-      scratchVec1.set(stairs.pos[0], stairs.pos[1], stairs.pos[2]);
-      if (pPos.distanceTo(scratchVec1) < 3.5) {
-        gameAudio.playPowerupChime();
-        onFloorClear();
-      }
+    scratchVec1.set(stairs.pos[0], stairs.pos[1], stairs.pos[2]);
+    const distance = pPos.distanceTo(scratchVec1);
+    if (stairsUnlocked && distance < 3.5 && floorLatchRef.current.tryFire()) {
+      gameAudio.playPowerupChime();
+      onFloorClear();
     }
   };
 
@@ -593,8 +608,14 @@ function DungeonScene({
       ], '#f59e0b');
     }
 
+    const roomDrops = roomClearChests(floorData, enemiesRef.current, enemy);
+    if (roomDrops.length) {
+      setChests((prev) => [...prev, ...roomDrops]);
+      spawnFloatingText('Potion!', roomDrops[0].pos, '#22c55e');
+    }
+
     if (enemy.isBoss) {
-      floorData.stairs.unlocked = true;
+      setStairsUnlocked(true);
       spawnFloatingText('STAIRS TO NEXT FLOOR OPEN!', enemy.pos, '#10b981');
       onBossDefeated?.();
     }
@@ -602,8 +623,12 @@ function DungeonScene({
 
   // Main 60FPS Game & Physics Loop
   useFrame((_, delta) => {
-    if (gameState.status !== 'PLAYING') return;
-    const dt = Math.min(delta, 0.1);
+    if (paused) {
+      wasPausedRef.current = true;
+      return;
+    }
+    const dt = frameDelta(delta, wasPausedRef.current);
+    wasPausedRef.current = false;
 
     // Handle touch look delta from mobile
     if (touchLookDeltaRef.current.dx !== 0 || touchLookDeltaRef.current.dy !== 0) {
@@ -955,17 +980,7 @@ function DungeonScene({
     }
 
     // Update Floating Texts
-    if (floatingTextsRef.current.length > 0) {
-      const activeTexts: FloatingText[] = [];
-      floatingTextsRef.current.forEach((ft) => {
-        ft.life += dt;
-        ft.pos[1] += dt * 1.5; // Float upwards
-        if (ft.life < ft.maxLife) {
-          activeTexts.push(ft);
-        }
-      });
-      setFloatingTexts(activeTexts);
-    }
+    if (textStore.update(dt)) setFloatingTexts([...textStore.list]);
 
     // Update Particles
     if (particlesRef.current.length > 0) {
@@ -982,6 +997,18 @@ function DungeonScene({
       });
       setParticles(activeParts);
     }
+
+    syncMinimapBridge(minimapBridgeRef.current, {
+      tiles: floorData.tiles,
+      rooms: floorData.rooms,
+      gridSize: floorData.gridSize,
+      playerX: playerPos.current.x,
+      playerZ: playerPos.current.z,
+      playerYaw: playerYaw.current,
+      enemies: enemiesRef.current,
+      chests: chestsRef.current,
+      stairs: floorData.stairs,
+    });
   });
 
   // Player Damage Application
@@ -1156,6 +1183,10 @@ function DungeonScene({
         </group>
       ))}
 
+      {floatingTexts.map((ft) => (
+        <FloatingTextSprite key={ft.id} ft={ft} />
+      ))}
+
       {/* Treasure Chests */}
       {chests.map((chest) => (
         <group key={chest.id} position={chest.pos}>
@@ -1263,13 +1294,13 @@ function DungeonScene({
         <mesh position={[0, 0.45, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.2, 1.5, 24]} />
           <meshStandardMaterial
-            color={floorData.stairs.unlocked ? '#10b981' : '#64748b'}
-            emissive={floorData.stairs.unlocked ? '#059669' : '#0f172a'}
-            emissiveIntensity={floorData.stairs.unlocked ? 2.5 : 0.2}
+            color={stairsUnlocked ? '#10b981' : '#64748b'}
+            emissive={stairsUnlocked ? '#059669' : '#0f172a'}
+            emissiveIntensity={stairsUnlocked ? 2.5 : 0.2}
             side={THREE.DoubleSide}
           />
         </mesh>
-        {floorData.stairs.unlocked && (
+        {stairsUnlocked && (
           <pointLight
             position={[0, 1.2, 0]}
             intensity={20}
