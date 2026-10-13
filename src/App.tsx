@@ -24,6 +24,7 @@ import {
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {AVAILABLE_MUSIC_TRACKS, getConfig} from './constants';
 import {Game} from './Game';
+import {RotatePrompt} from './components/RotatePrompt';
 import {
   DungeonFloorData,
   EnemyEntity,
@@ -374,6 +375,7 @@ export default function App() {
 
   return (
     <div className="fixed inset-0 overflow-hidden touch-none flex flex-col bg-zinc-950 text-white font-sans select-none">
+      <RotatePrompt />
       <BackgroundMusic
         url={
           gameState.level >= 5

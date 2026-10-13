@@ -1,0 +1,51 @@
+/* AD-14: rotate-device prompt + safe-area insets (CSS only). */
+
+/* Keep the game shell (HUD, joystick, menus) inside the device safe area
+   (notch / home indicator). Requires viewport-fit=cover in index.html. */
+#root .fixed.inset-0.overflow-hidden.touch-none {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+}
+
+.rotate-prompt {
+  display: none;
+}
+
+@media (pointer: coarse) and (orientation: portrait) {
+  .rotate-prompt {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+      env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    background: #09090b;
+    color: #fcd34d;
+    font-family: sans-serif;
+    text-align: center;
+    pointer-events: auto;
+    touch-action: none;
+  }
+}
+
+.rotate-prompt__icon {
+  font-size: 3rem;
+  animation: rotate-prompt-spin 2s ease-in-out infinite;
+}
+
+.rotate-prompt__text {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+@keyframes rotate-prompt-spin {
+  0%, 30% { transform: rotate(0deg); }
+  60%, 100% { transform: rotate(90deg); }
+}
