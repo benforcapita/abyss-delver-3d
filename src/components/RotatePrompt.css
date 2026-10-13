@@ -1,0 +1,59 @@
+/* AD-14: rotate-device prompt + safe-area insets (CSS only). */
+
+/* Keep the HUD inside the device safe area (notch / home indicator) while the
+   canvas stays full-bleed. Requires viewport-fit=cover in index.html.
+   max() preserves the existing Tailwind p-2 base padding. */
+.hud-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+  padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+  padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
+}
+
+/* Mobile joystick/action-button row (sits outside .hud-safe). Keeps its px-6. */
+.hud-safe-controls {
+  padding-right: max(1.5rem, env(safe-area-inset-right, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: max(1.5rem, env(safe-area-inset-left, 0px));
+}
+
+.rotate-prompt {
+  display: none;
+}
+
+@media (pointer: coarse) and (orientation: portrait) {
+  .rotate-prompt {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+      env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    background: #09090b;
+    color: #fcd34d;
+    font-family: sans-serif;
+    text-align: center;
+    pointer-events: auto;
+    touch-action: none;
+  }
+}
+
+.rotate-prompt__icon {
+  font-size: 3rem;
+  animation: rotate-prompt-spin 2s ease-in-out infinite;
+}
+
+.rotate-prompt__text {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+@keyframes rotate-prompt-spin {
+  0%, 30% { transform: rotate(0deg); }
+  60%, 100% { transform: rotate(90deg); }
+}
