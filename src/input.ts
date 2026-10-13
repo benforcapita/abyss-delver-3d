@@ -1,4 +1,6 @@
 import {useEffect, useRef, type MutableRefObject, type RefObject} from 'react';
+import {actionsForCode, type BindableAction} from './platform/keybindings';
+import {getSettings} from './platform/settings';
 
 /** Actions that can be triggered by the user. */
 export type InputAction =
@@ -27,19 +29,24 @@ export interface InputSnapshot {
   pointer: PointerState;
 }
 
-const ACTION_KEYS: Record<string, InputAction> = {
-  ArrowLeft: 'left',
-  ArrowRight: 'right',
-  ArrowUp: 'up',
-  ArrowDown: 'down',
-  a: 'left',
-  d: 'right',
-  w: 'up',
-  s: 'down',
-  Enter: 'confirm',
-  ' ': 'confirm',
-  Escape: 'cancel',
+/** Bindable game actions that feed the per-frame snapshot. */
+const BOUND_TO_INPUT: Partial<Record<BindableAction, InputAction>> = {
+  moveUp: 'up',
+  moveDown: 'down',
+  moveLeft: 'left',
+  moveRight: 'right',
+  attack: 'confirm',
 };
+
+/** Resolve a key event to an InputAction using the live key bindings. */
+function inputActionFor(event: KeyboardEvent): InputAction | undefined {
+  if (event.code === 'Escape' || event.key === 'Escape') return 'cancel';
+  for (const bound of actionsForCode(getSettings().keyBindings, event.code)) {
+    const action = BOUND_TO_INPUT[bound];
+    if (action) return action;
+  }
+  return undefined;
+}
 
 function createEmptyActions(): Record<InputAction, boolean> {
   return {
@@ -141,13 +148,13 @@ export function useInput(
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      const action = ACTION_KEYS[event.key];
+      const action = inputActionFor(event);
       if (!action) return;
       inputRef.current.actions[action] = true;
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
-      const action = ACTION_KEYS[event.key];
+      const action = inputActionFor(event);
       if (!action) return;
       inputRef.current.actions[action] = false;
     };
