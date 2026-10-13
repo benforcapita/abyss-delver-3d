@@ -3,6 +3,8 @@
 // before windup->attack" but gives no numeric timings or sizes, so the windup
 // duration and radius below are chosen here for gameplay balance.
 
+import type {EnemyArchetype} from './types';
+
 export const BOSS_TELEGRAPH_WINDUP = 0.9; // seconds
 export const BOSS_TELEGRAPH_RADIUS = 2.5; // world units
 
@@ -49,4 +51,21 @@ export function telegraphProgress(t: BossTelegraph): number {
 
 export function isTelegraphComplete(t: BossTelegraph): boolean {
   return t.elapsed >= t.windup;
+}
+
+/**
+ * Only bosses on the melee/slam branch get a ground ring. The crimson
+ * archmage's fireball is a single-target projectile with no AoE impact, so it
+ * shows no ring; non-bosses never telegraph.
+ */
+export function usesGroundTelegraph(
+  isBoss: boolean,
+  archetype: EnemyArchetype,
+): boolean {
+  return isBoss && archetype !== 'boss_crimson_archmage';
+}
+
+/** A telegraphed slam lands only if the player is in range AND inside the ring. */
+export function meleeHitLands(inRange: boolean, insideRing: boolean): boolean {
+  return inRange && insideRing;
 }

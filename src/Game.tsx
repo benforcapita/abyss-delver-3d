@@ -8,8 +8,10 @@ import * as THREE from 'three';
 import {
   BOSS_TELEGRAPH_WINDUP,
   isInsideRing,
+  meleeHitLands,
   startTelegraph,
   tickTelegraph,
+  usesGroundTelegraph,
 } from './bossTelegraph';
 import {BossTelegraph} from './components/BossTelegraph';
 import {getConfig} from './constants';
@@ -831,9 +833,13 @@ function DungeonScene({
             enemy.pos[2] += Math.cos(angleToPlayer) * speed;
           } else {
             enemy.state = 'windup';
-            enemy.stateTimer = enemy.isBoss ? BOSS_TELEGRAPH_WINDUP : 0.5;
+            const groundTelegraph = usesGroundTelegraph(
+              enemy.isBoss,
+              enemy.archetype,
+            );
+            enemy.stateTimer = groundTelegraph ? BOSS_TELEGRAPH_WINDUP : 0.5;
             enemy.telegraphTimer = enemy.stateTimer;
-            if (enemy.isBoss) {
+            if (groundTelegraph) {
               // Telegraph locks onto the player's current position
               enemy.telegraph = startTelegraph(pPos.x, pPos.z);
             }
@@ -847,19 +853,11 @@ function DungeonScene({
           if (enemy.stateTimer <= 0) {
             enemy.state = 'attack';
             enemy.stateTimer = 0.3;
+            const tel = enemy.telegraph;
+            enemy.telegraph = undefined;
 
             // Execute attack
-            if (enemy.isBoss) {
-              // Boss slam only hits if the player is still inside the ring
-              const tel = enemy.telegraph;
-              enemy.telegraph = undefined;
-              if (
-                tel &&
-                isInsideRing(pPos.x, pPos.z, tel.cx, tel.cz, tel.radius)
-              ) {
-                applyPlayerDamage(enemy.attackPower, enemy.name);
-              }
-            } else if (enemy.archetype === 'cultist') {
+            if (enemy.archetype === 'cultist' || enemy.archetype === 'boss_crimson_archmage') {
               // Ranged homing fireball
               gameAudio.playArcadeLaser();
               const targetX = pPos.x;
@@ -885,7 +883,10 @@ function DungeonScene({
               setProjectiles((prev) => [...prev, enemyProj]);
             } else {
               // Melee Strike
-              if (distToPlayer <= enemy.attackRange + 1.0) {
+              const insideRing = tel
+                ? isInsideRing(pPos.x, pPos.z, tel.cx, tel.cz, tel.radius)
+                : true;
+              if (meleeHitLands(distToPlayer <= enemy.attackRange + 1.0, insideRing)) {
                 applyPlayerDamage(enemy.attackPower, enemy.name);
                 gameAudio.playMeleePunch();
               }

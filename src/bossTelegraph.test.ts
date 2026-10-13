@@ -4,9 +4,11 @@ import {
   BOSS_TELEGRAPH_WINDUP,
   isInsideRing,
   isTelegraphComplete,
+  meleeHitLands,
   startTelegraph,
   telegraphProgress,
   tickTelegraph,
+  usesGroundTelegraph,
 } from './bossTelegraph';
 
 describe('bossTelegraph', () => {
@@ -82,6 +84,42 @@ describe('bossTelegraph', () => {
       const next = tickTelegraph(t, 0.1);
       expect(next).not.toBe(t);
       expect(t.elapsed).toBe(0);
+    });
+  });
+
+  describe('usesGroundTelegraph', () => {
+    it('is true for melee/slam bosses', () => {
+      for (const archetype of [
+        'boss_bone_colossus',
+        'boss_gorgon',
+        'boss_shadow_knight',
+        'boss_void_overlord',
+      ] as const) {
+        expect(usesGroundTelegraph(true, archetype)).toBe(true);
+      }
+    });
+    it('is false for the crimson archmage (single-target fireball, no AoE ring)', () => {
+      expect(usesGroundTelegraph(true, 'boss_crimson_archmage')).toBe(false);
+    });
+    it('is false for non-bosses', () => {
+      for (const archetype of [
+        'skeleton',
+        'cultist',
+        'slime',
+      ] as const) {
+        expect(usesGroundTelegraph(false, archetype)).toBe(false);
+      }
+      // A non-boss flag always wins, even with a boss archetype
+      expect(usesGroundTelegraph(false, 'boss_bone_colossus')).toBe(false);
+    });
+  });
+
+  describe('meleeHitLands', () => {
+    it('lands only when in range and inside the ring', () => {
+      expect(meleeHitLands(true, true)).toBe(true);
+      expect(meleeHitLands(true, false)).toBe(false);
+      expect(meleeHitLands(false, true)).toBe(false);
+      expect(meleeHitLands(false, false)).toBe(false);
     });
   });
 });
