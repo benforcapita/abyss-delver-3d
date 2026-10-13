@@ -1,4 +1,5 @@
 import {useEffect, useRef, type MutableRefObject, type RefObject} from 'react';
+import {pointerDownStartsAttack} from './attackEdge';
 import {actionsForCode, type BindableAction} from './platform/keybindings';
 import {getSettings} from './platform/settings';
 import {pointerDownAttacks} from './pointerAttack';
@@ -172,7 +173,9 @@ export function useInput(
       inputRef.current.pointer = {...pos, down: true};
       const locked = document.pointerLockElement != null;
       // Pointer-lock gate (#34): the click that acquires pointer lock never attacks.
+      // Touch outside SLASH never attacks (#38); pointer-lock gate (#34).
       if (
+        !pointerDownStartsAttack(event.pointerType) ||
         !pointerDownAttacks({
           pointerType: event.pointerType,
           pointerLocked: locked,
