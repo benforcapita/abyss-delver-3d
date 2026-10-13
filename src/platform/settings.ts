@@ -8,6 +8,8 @@ export const SETTINGS_KEY = 'ad3d.settings';
 /** Player-facing settings persisted in localStorage['ad3d.settings']. */
 export interface UserSettings {
   lookSensitivity: number;
+  /** Touch drag-to-look sensitivity (separate from mouse). */
+  touchLookSensitivity: number;
   enableAutoAimAssist: boolean;
   /** Background music volume, 0..1. */
   musicVolume: number;
@@ -21,12 +23,15 @@ export interface UserSettings {
 
 export const SETTINGS_LIMITS = {
   lookSensitivity: {min: 0.5, max: 4.0, step: 0.1},
+  touchLookSensitivity: {min: 0.5, max: 4.0, step: 0.1},
   musicVolume: {min: 0, max: 1, step: 0.05},
   sfxVolume: {min: 0, max: 1, step: 0.05},
 } as const;
 
 export const DEFAULT_SETTINGS: Readonly<UserSettings> = Object.freeze({
   lookSensitivity: 1.8,
+  // Same as the mouse default, so touch look is unchanged out of the box.
+  touchLookSensitivity: 1.8,
   // Mirrors the existing config default (playground_config.json, currently true).
   enableAutoAimAssist: playgroundConfig.values?.enableAutoAimAssist === true,
   // Matches BackgroundMusic's historical default so out-of-the-box sound is unchanged.
@@ -54,6 +59,14 @@ export function normalizeSettings(raw: unknown): UserSettings {
   const D = DEFAULT_SETTINGS;
   return {
     lookSensitivity: clampNum(src.lookSensitivity, L.lookSensitivity.min, L.lookSensitivity.max, D.lookSensitivity),
+    // Saves from before this setting existed: touch followed lookSensitivity,
+    // so inherit it to keep each player's current touch feel.
+    touchLookSensitivity: clampNum(
+      src.touchLookSensitivity ?? src.lookSensitivity,
+      L.touchLookSensitivity.min,
+      L.touchLookSensitivity.max,
+      D.touchLookSensitivity,
+    ),
     enableAutoAimAssist:
       typeof src.enableAutoAimAssist === 'boolean' ? src.enableAutoAimAssist : D.enableAutoAimAssist,
     musicVolume: clampNum(src.musicVolume ?? src.defaultMusicVolume, L.musicVolume.min, L.musicVolume.max, D.musicVolume),
@@ -71,6 +84,11 @@ export function loadSettings(): UserSettings {
 type Listener = (s: UserSettings) => void;
 let current: UserSettings = loadSettings();
 const listeners = new Set<Listener>();
+
+/** Live touch look sensitivity (read per frame by touch look input). */
+export function getTouchLookSensitivity(): number {
+  return current.touchLookSensitivity;
+}
 
 /** Current in-memory settings (live). */
 export function getSettings(): UserSettings {
