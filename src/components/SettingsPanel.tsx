@@ -57,17 +57,13 @@ export function SettingsPanel({settings, onChange, onClose}: SettingsPanelProps)
   const [listening, setListening] = useState<BindableAction | null>(null);
   const [notice, setNotice] = useState('');
 
-  // While waiting for a key, capture the next keydown (Escape cancels).
+  // While waiting for a key, capture the next keydown (Escape cancels) or the
+  // next left mouse press (binds 'Mouse0'). preventDefault suppresses the
+  // click so other buttons aren't activated while listening.
   useEffect(() => {
     if (!listening) return;
-    const onKey = (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      if (e.code === 'Escape') {
-        setListening(null);
-        return;
-      }
-      const res = rebind(settings.keyBindings, listening, e.code);
+    const apply = (key: unknown) => {
+      const res = rebind(settings.keyBindings, listening, key);
       if (res.ok) {
         onChange({keyBindings: res.bindings});
         setNotice(
@@ -80,8 +76,27 @@ export function SettingsPanel({settings, onChange, onClose}: SettingsPanelProps)
       }
       setListening(null);
     };
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.code === 'Escape') {
+        setListening(null);
+        return;
+      }
+      apply(e.code);
+    };
+    const onPointer = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      apply('Mouse0');
+    };
     window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
+    window.addEventListener('pointerdown', onPointer, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('pointerdown', onPointer, true);
+    };
   }, [listening, settings.keyBindings, onChange]);
 
   return (
@@ -162,7 +177,7 @@ export function SettingsPanel({settings, onChange, onClose}: SettingsPanelProps)
         </div>
         <div className="flex justify-between items-center mt-1">
           <span data-testid="bind-notice" className="text-amber-300 text-[10px]">
-            {notice || 'Click a key, then press the new key (Esc cancels). Conflicts swap.'}
+            {notice || 'Click a binding, then press a key or LMB (Esc cancels). Conflicts swap.'}
           </span>
           <button
             data-testid="bind-reset"

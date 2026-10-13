@@ -39,14 +39,19 @@ const BOUND_TO_INPUT: Partial<Record<BindableAction, InputAction>> = {
   attack: 'confirm',
 };
 
-/** Resolve a key event to an InputAction using the live key bindings. */
-function inputActionFor(event: KeyboardEvent): InputAction | undefined {
-  if (event.code === 'Escape' || event.key === 'Escape') return 'cancel';
-  for (const bound of actionsForCode(getSettings().keyBindings, event.code)) {
+/** Resolve a bound code (KeyboardEvent.code or 'Mouse0') to an InputAction. */
+function inputActionForCode(code: string): InputAction | undefined {
+  for (const bound of actionsForCode(getSettings().keyBindings, code)) {
     const action = BOUND_TO_INPUT[bound];
     if (action) return action;
   }
   return undefined;
+}
+
+/** Resolve a key event to an InputAction using the live key bindings. */
+function inputActionFor(event: KeyboardEvent): InputAction | undefined {
+  if (event.code === 'Escape' || event.key === 'Escape') return 'cancel';
+  return inputActionForCode(event.code);
 }
 
 function createEmptyActions(): Record<InputAction, boolean> {
@@ -166,12 +171,22 @@ export function useInput(
       const pos = getPointerNDC(event, container);
       inputRef.current.pointer = {...pos, down: true};
       const locked = document.pointerLockElement != null;
+      // Pointer-lock gate (#34): the click that acquires pointer lock never attacks.
       if (
-        pointerDownAttacks({
+        !pointerDownAttacks({
           pointerType: event.pointerType,
           pointerLocked: locked,
         })
       ) {
+        return;
+      }
+      if (event.pointerType === 'mouse') {
+        // The left button acts as the bound 'Mouse0' key.
+        if (event.button === 0) {
+          const action = inputActionForCode('Mouse0');
+          if (action) inputRef.current.actions[action] = true;
+        }
+      } else {
         inputRef.current.actions.tap = true;
       }
     };
@@ -186,7 +201,14 @@ export function useInput(
       if (!container) return;
       const pos = getPointerNDC(event, container);
       inputRef.current.pointer = {...pos, down: false};
-      inputRef.current.actions.tap = false;
+      if (event.pointerType === 'mouse') {
+        if (event.button === 0 || event.type === 'pointercancel') {
+          const action = inputActionForCode('Mouse0');
+          if (action) inputRef.current.actions[action] = false;
+        }
+      } else {
+        inputRef.current.actions.tap = false;
+      }
     };
 
     const handleBlur = () => {

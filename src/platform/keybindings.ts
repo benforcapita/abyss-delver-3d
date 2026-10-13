@@ -1,15 +1,12 @@
 /**
  * Pure key-binding logic (no DOM, no storage). Bindings map each game action
- * to exactly one KeyboardEvent.code (layout-independent, e.g. "KeyW").
+ * to exactly one KeyboardEvent.code (layout-independent, e.g. "KeyW") or the
+ * pseudo-code "Mouse0" for the left mouse button.
  *
  * Conflict policy: SWAP. Binding a key that another action already uses gives
  * that other action the rebound action's previous key. If that previous key is
- * still in use (the shared Space default), the displaced action gets the first
- * free fallback key instead. Every action always keeps exactly one key.
- *
- * Exception: the default pair Space → attack + dash (today's controls) may
- * share one key. Binding either to Space while the other is on Space is not a
- * conflict; rebinding either one away from Space splits them.
+ * still in use, the displaced action gets the first free fallback key instead.
+ * Every action always keeps exactly one key; no two actions may share a key.
  */
 
 export const BINDABLE_ACTIONS = [
@@ -44,21 +41,12 @@ export const DEFAULT_KEY_BINDINGS: Readonly<KeyBindings> = Object.freeze({
   moveDown: 'KeyS',
   moveLeft: 'KeyA',
   moveRight: 'KeyD',
-  attack: 'Space',
+  attack: 'Mouse0',
   potion: 'Digit1',
   spell: 'Digit2',
   interact: 'KeyE',
   dash: 'Space',
 });
-
-/** The one default key allowed to drive two actions at once. */
-export const SHARED_KEY = 'Space';
-const SHARED_ACTIONS: ReadonlySet<BindableAction> = new Set(['attack', 'dash']);
-
-/** True when `a` and `b` may both be bound to `code` (the default Space pair). */
-export function canShare(code: string, a: BindableAction, b: BindableAction): boolean {
-  return code === SHARED_KEY && a !== b && SHARED_ACTIONS.has(a) && SHARED_ACTIONS.has(b);
-}
 
 /**
  * Fixed secondary keys (not rebindable). Arrows always move. The legacy
@@ -144,6 +132,8 @@ export function normalizeKeyCode(input: unknown): string | null {
   if (m) return `Numpad${m[1]}`;
   m = /^f([1-9]|1[0-2])$/.exec(lower);
   if (m) return `F${m[1]}`;
+  m = /^mouse([0-9])$/.exec(lower);
+  if (m) return `Mouse${m[1]}`;
   return NAMED[lower] ?? null;
 }
 
@@ -155,13 +145,12 @@ const FALLBACK_KEYS = [
   ...new Set([...Object.values(DEFAULT_KEY_BINDINGS), ...Object.keys(LEGACY_ALIASES)]),
   ...'ZXCVBNMGHJKLPOIUYTR'.split('').map((c) => `Key${c}`),
   ...'34567890'.split('').map((d) => `Digit${d}`),
-];
+  // Mouse codes are bindable but never handed out as automatic fallbacks.
+].filter((c) => !c.startsWith('Mouse'));
 
 /** Can `action` take `code` given the current (partial) bindings? */
 function fits(b: Partial<KeyBindings>, action: BindableAction, code: string): boolean {
-  return BINDABLE_ACTIONS.every(
-    (o) => o === action || b[o] !== code || canShare(code, action, o),
-  );
+  return BINDABLE_ACTIONS.every((o) => o === action || b[o] !== code);
 }
 
 function firstFree(b: Partial<KeyBindings>, action: BindableAction): string {
@@ -169,15 +158,35 @@ function firstFree(b: Partial<KeyBindings>, action: BindableAction): string {
 }
 
 /**
+ * Pre-normalization migration for saves written when attack and dash shared
+ * the Space default. An attack binding of 'Space' can only be the old shared
+ * default (or the pair re-joined on Space), so it is dropped and picks up the
+ * new 'Mouse0' default — or the first free fallback if that is taken. Dash
+ * keeps 'Space' (still its default), and any custom non-Space bindings are
+ * preserved untouched. Pure; returns `raw` unchanged when no migration applies.
+ */
+export function migrateLegacyBindings(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  const src = raw as Record<string, unknown>;
+  if (normalizeKeyCode(src.attack) !== 'Space') return raw;
+  const next = {...src};
+  delete next.attack;
+  return next;
+}
+
+/**
  * Merge stored (possibly old, partial, or corrupt) bindings with defaults.
- * Invalid entries fall back to the default; disallowed duplicates are resolved
- * so the earlier action (in BINDABLE_ACTIONS order) keeps the key and the later
- * one takes its default, or the first free fallback if that is taken too. The
- * Space attack+dash pair is allowed and left as is.
+ * Legacy saves are migrated first (see migrateLegacyBindings). Invalid entries
+ * fall back to the default; duplicates are resolved so the earlier action (in
+ * BINDABLE_ACTIONS order) keeps the key and the later one takes its default,
+ * or the first free fallback if that is taken too.
  */
 export function normalizeBindings(raw: unknown): KeyBindings {
+  const migrated = migrateLegacyBindings(raw);
   const src: Record<string, unknown> =
-    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+    migrated && typeof migrated === 'object' && !Array.isArray(migrated)
+      ? (migrated as Record<string, unknown>)
+      : {};
   const out: Partial<KeyBindings> = {};
   const pending: BindableAction[] = [];
   for (const a of BINDABLE_ACTIONS) {
@@ -204,9 +213,7 @@ export function rebind(bindings: KeyBindings, action: BindableAction, key: unkno
   const next = {...bindings};
   const prev = next[action];
   next[action] = code;
-  const displaced = BINDABLE_ACTIONS.filter(
-    (o) => o !== action && next[o] === code && !canShare(code, action, o),
-  );
+  const displaced = BINDABLE_ACTIONS.filter((o) => o !== action && next[o] === code);
   for (const o of displaced) {
     next[o] = fits(next, o, prev) ? prev : firstFree(next, o);
   }
@@ -220,8 +227,8 @@ export function resetBindings(): KeyBindings {
 }
 
 /**
- * Resolve a KeyboardEvent.code to its action(s), honouring aliases. Returns
- * two actions only for the shared Space attack+dash binding.
+ * Resolve a code (KeyboardEvent.code or the 'Mouse0' pseudo-code) to its
+ * action, honouring aliases. Primary bindings win over fixed/legacy aliases.
  */
 export function actionsForCode(bindings: KeyBindings, code: string): BindableAction[] {
   const normalized = normalizeKeyCode(code) ?? code;
@@ -235,6 +242,9 @@ export function actionsForCode(bindings: KeyBindings, code: string): BindableAct
 export function keyLabel(code: string): string {
   if (/^Key[A-Z]$/.test(code)) return code.slice(3);
   if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  const mouse: Record<string, string> = {Mouse0: 'LMB', Mouse1: 'MMB', Mouse2: 'RMB'};
+  if (mouse[code]) return mouse[code];
+  if (/^Mouse[0-9]$/.test(code)) return code.replace('Mouse', 'Mouse ');
   const arrows: Record<string, string> = {ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→'};
   if (arrows[code]) return arrows[code];
   return code.replace(/(Left|Right)$/, ' $1');
