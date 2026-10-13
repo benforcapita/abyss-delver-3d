@@ -1,6 +1,7 @@
 import {useEffect, useRef, type MutableRefObject, type RefObject} from 'react';
 import {actionsForCode, type BindableAction} from './platform/keybindings';
 import {getSettings} from './platform/settings';
+import {pointerDownAttacks} from './pointerAttack';
 
 /** Actions that can be triggered by the user. */
 export type InputAction =
@@ -164,7 +165,15 @@ export function useInput(
       if (!container) return;
       const pos = getPointerNDC(event, container);
       inputRef.current.pointer = {...pos, down: true};
-      inputRef.current.actions.tap = true;
+      const locked = document.pointerLockElement != null;
+      if (
+        pointerDownAttacks({
+          pointerType: event.pointerType,
+          pointerLocked: locked,
+        })
+      ) {
+        inputRef.current.actions.tap = true;
+      }
     };
 
     const handlePointerMove = (event: PointerEvent) => {
