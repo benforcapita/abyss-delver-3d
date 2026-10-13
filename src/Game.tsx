@@ -7,6 +7,7 @@ import React, {Suspense, useEffect, useMemo, useRef, useState} from 'react';
 import * as THREE from 'three';
 import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
 import {applyCameraLocalPose, createFlashMap, holdHitFlashes, PLAYER_FLASH_ID, syncHitFlashes, triggerHitFlash} from './fx/hitFlash';
+import {createHitStopState, isHeavyHit, stepHitStop, triggerHitStop} from './fx/hitStop';
 import {
   createShakeState,
   isScreenShakeEnabled,
@@ -226,6 +227,7 @@ function DungeonScene({
   const dashDir = useRef<THREE.Vector3>(new THREE.Vector3());
   const screenShake = useRef(createShakeState());
   const lastShake = useRef({x: 0, y: 0});
+  const hitStop = useRef(createHitStopState());
   const hitFlashes = useRef(createFlashMap());
   const lastFxNow = useRef(0);
   const flashTargets = useRef(new Map<string, THREE.Object3D>());
@@ -395,6 +397,7 @@ function DungeonScene({
           enemy.stateTimer = 0.2;
           triggerHitFlash(hitFlashes.current, enemy.id, performance.now());
           triggerScreenShake(screenShake.current, outgoingShakeAmount(dmg, isCrit));
+          if (isHeavyHit(dmg, isCrit)) triggerHitStop(hitStop.current);
 
           spawnFloatingText(
             isCrit ? `${dmg}! CRIT` : `${dmg}`,
@@ -639,9 +642,10 @@ function DungeonScene({
         applied.y = 0;
       }
       stepScreenShake(screenShake.current, 0, {enabled: isScreenShakeEnabled(), paused: true});
+      stepHitStop(hitStop.current, delta, paused);
       return;
     }
-    const dt = frameDelta(delta, wasPausedRef.current);
+    const dt = stepHitStop(hitStop.current, frameDelta(delta, wasPausedRef.current), paused).dt;
     wasPausedRef.current = false;
 
     // Handle touch look delta from mobile
@@ -967,6 +971,7 @@ function DungeonScene({
               enemy.stateTimer = 0.2;
               triggerHitFlash(hitFlashes.current, enemy.id, performance.now());
               triggerScreenShake(screenShake.current, outgoingShakeAmount(dmg, isCrit));
+              if (isHeavyHit(dmg, isCrit)) triggerHitStop(hitStop.current);
 
               spawnFloatingText(
                 isCrit ? `${dmg}! CRIT` : `${dmg}`,
@@ -1042,6 +1047,7 @@ function DungeonScene({
     gameAudio.playMeleePunch();
     triggerHitFlash(hitFlashes.current, PLAYER_FLASH_ID, performance.now());
     triggerScreenShake(screenShake.current, playerHurtShake(finalDmg));
+    if (isHeavyHit(finalDmg)) triggerHitStop(hitStop.current);
 
     setPlayerStats((prev) => {
       const newHp = Math.max(0, prev.hp - finalDmg);
