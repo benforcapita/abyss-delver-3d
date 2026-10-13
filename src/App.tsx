@@ -50,7 +50,7 @@ import {
 } from './utils/helper';
 import {sdk, useGameLifecycle} from './platform/lifecycle';
 import {getSettings, saveSettings, subscribeSettings} from './platform/settings';
-import {actionsForCode} from './platform/keybindings';
+import {actionsForCode, type BindableAction} from './platform/keybindings';
 import {SettingsPanel} from './components/SettingsPanel';
 import {FINAL_FLOOR, floorClearScore, isVictory, victoryBonus} from './rules';
 import {loadBest, saveBest, type BestScore} from './bestScore';
@@ -223,6 +223,22 @@ export default function App() {
 
   // Keyboard shortcut for Escape -> Toggle Game Menu & 1/2/3 Hotkeys
   useEffect(() => {
+    const dispatchBoundAction = (action: BindableAction) => {
+      if (action === 'potion') {
+        // Drink Potion
+        drinkPotion();
+      } else if (action === 'spell') {
+        // Cast Fireball Spell
+        triggerSpellRef.current = true;
+      } else if (action === 'interact') {
+        // Interact
+        triggerInteractRef.current = true;
+      } else if (action === 'dash') {
+        // Dash
+        triggerDashRef.current = true;
+      }
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (isHowToPlayOpen) {
@@ -235,28 +251,30 @@ export default function App() {
       }
 
       if (gameState.status === 'PLAYING' && !isGameMenuOpen && !isHowToPlayOpen) {
-        // A key can map to two actions (default Space = attack + dash);
-        // attack itself is read from the input snapshot in Game.
+        // Attack itself is read from the input snapshot in Game.
         for (const action of actionsForCode(getSettings().keyBindings, e.code)) {
-          if (action === 'potion') {
-            // Drink Potion
-            drinkPotion();
-          } else if (action === 'spell') {
-            // Cast Fireball Spell
-            triggerSpellRef.current = true;
-          } else if (action === 'interact') {
-            // Interact
-            triggerInteractRef.current = true;
-          } else if (action === 'dash') {
-            // Dash
-            triggerDashRef.current = true;
-          }
+          dispatchBoundAction(action);
+        }
+      }
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      // Bound 'Mouse0' actions fire only while the pointer is locked to the
+      // game canvas; the click that acquires the lock must not trigger them.
+      if (e.button !== 0 || !document.pointerLockElement) return;
+      if (gameState.status === 'PLAYING' && !isGameMenuOpen && !isHowToPlayOpen) {
+        for (const action of actionsForCode(getSettings().keyBindings, 'Mouse0')) {
+          dispatchBoundAction(action);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('mousedown', handleMouseDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('mousedown', handleMouseDown);
+    };
   }, [gameState.status, isGameMenuOpen, isHowToPlayOpen, playerStats.potions]);
 
   // Potion Drinking Handler
@@ -678,8 +696,9 @@ export default function App() {
                   <span className="text-amber-400 font-bold">WASD</span> Move ·{' '}
                   <span className="text-amber-400 font-bold">LMB</span> Slash ·{' '}
                   <span className="text-sky-400 font-bold">2/F</span> Fireball ·{' '}
-                  <span className="text-emerald-400 font-bold">Space</span> Dash
-                  · <span className="text-yellow-400 font-bold">E</span> Interact
+                  <span className="text-emerald-400 font-bold">Space/Shift</span>{' '}
+                  Dash · <span className="text-yellow-400 font-bold">E</span>{' '}
+                  Interact
                 </div>
               )}
             </div>
