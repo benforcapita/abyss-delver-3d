@@ -1,4 +1,5 @@
 import React from 'react';
+import {prefersReducedMotion} from '../fx/screenShake';
 import {SETTINGS_LIMITS, type UserSettings} from '../platform/settings';
 
 export interface SettingsPanelProps {
@@ -42,7 +43,7 @@ function Slider(props: {
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
-/** Settings panel: look sensitivity, aim assist, music & SFX volume. */
+/** Settings panel: look sensitivity, aim assist, screen shake, music and SFX volume. */
 export function SettingsPanel({settings, onChange, onClose}: SettingsPanelProps) {
   const L = SETTINGS_LIMITS;
   return (
@@ -65,6 +66,21 @@ export function SettingsPanel({settings, onChange, onClose}: SettingsPanelProps)
           data-testid="setting-aim-assist"
           checked={settings.enableAutoAimAssist}
           onChange={(e) => onChange({enableAutoAimAssist: e.target.checked})}
+          className="w-5 h-5 accent-amber-500"
+        />
+      </label>
+      <label className="flex justify-between items-center text-xs font-bold text-zinc-300">
+        <span>
+          Screen Shake
+          {prefersReducedMotion() ? (
+            <span className="block font-normal text-zinc-500">Off while reduced motion is on</span>
+          ) : null}
+        </span>
+        <input
+          type="checkbox"
+          data-testid="setting-screen-shake"
+          checked={settings.screenShake}
+          onChange={(e) => onChange({screenShake: e.target.checked})}
           className="w-5 h-5 accent-amber-500"
         />
       </label>

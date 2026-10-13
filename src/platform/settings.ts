@@ -12,6 +12,8 @@ export interface UserSettings {
   musicVolume: number;
   /** Sound-effects volume, 0..1. */
   sfxVolume: number;
+  /** Camera shake on damage. Defaults on; reduced-motion still suppresses it. */
+  screenShake: boolean;
 }
 
 export const SETTINGS_LIMITS = {
@@ -27,6 +29,7 @@ export const DEFAULT_SETTINGS: Readonly<UserSettings> = Object.freeze({
   // Matches BackgroundMusic's historical default so out-of-the-box sound is unchanged.
   musicVolume: 0.15,
   sfxVolume: 0.7,
+  screenShake: playgroundConfig.values?.screenShake !== false,
 });
 
 function clampNum(v: unknown, min: number, max: number, fallback: number): number {
@@ -51,6 +54,7 @@ export function normalizeSettings(raw: unknown): UserSettings {
       typeof src.enableAutoAimAssist === 'boolean' ? src.enableAutoAimAssist : D.enableAutoAimAssist,
     musicVolume: clampNum(src.musicVolume ?? src.defaultMusicVolume, L.musicVolume.min, L.musicVolume.max, D.musicVolume),
     sfxVolume: clampNum(src.sfxVolume ?? src.defaultSfxVolume, L.sfxVolume.min, L.sfxVolume.max, D.sfxVolume),
+    screenShake: typeof src.screenShake === 'boolean' ? src.screenShake : D.screenShake,
   };
 }
 

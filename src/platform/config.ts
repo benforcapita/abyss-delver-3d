@@ -32,5 +32,6 @@ export function getConfig<T = unknown>(key: string): T | undefined {
   if (key === 'enableAutoAimAssist') return s.enableAutoAimAssist as T;
   if (key === 'defaultMusicVolume') return s.musicVolume as T;
   if (key === 'defaultSfxVolume') return s.sfxVolume as T;
+  if (key === 'screenShake') return s.screenShake as T;
   return merged[key] as T | undefined;
 }
