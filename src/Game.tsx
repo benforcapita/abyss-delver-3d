@@ -14,8 +14,9 @@ import {
   usesGroundTelegraph,
 } from './bossTelegraph';
 import {BossTelegraph} from './components/BossTelegraph';
-import {getConfig} from './constants';
+import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
 import {generateDungeonFloor} from './dungeonGenerator';
+import {createOneShotLatch} from './floorLatch';
 import {InputSnapshot, useInput} from './input';
 import {enemyKillScore, isGameOver} from './rules';
 import {
@@ -33,8 +34,10 @@ import {
 } from './types';
 import {gameAudio} from './utils';
 import {GameState} from './utils/helper';
+import {frameDelta} from './pause';
 
 interface GameProps {
+  paused: boolean;
   gameState: GameState;
   setGameState: React.Dispatch<React.SetStateAction<GameState>>;
   gameStateRef: MutableRefObject<GameState>;
@@ -150,6 +153,7 @@ function createDungeonWallTexture(): THREE.CanvasTexture {
 
 /** Inner Scene Component handling Camera, Combat, Entities, Lighting, and FX */
 function DungeonScene({
+  paused,
   gameState,
   setGameState,
   inputRef,
@@ -176,6 +180,8 @@ function DungeonScene({
 
   // Floor and mob data
   const floorLevel = gameState.level;
+  const [stairsUnlocked, setStairsUnlocked] = useState(false);
+  const floorLatchRef = useRef(createOneShotLatch());
   const [floorData, setFloorData] = useState<DungeonFloorData>(() => {
     const {floorData} = generateDungeonFloor(floorLevel, 0);
     return floorData;
@@ -229,6 +235,7 @@ function DungeonScene({
 
   // Latch so GAME_OVER status & defeat motif fire exactly once per run
   const gameOverLatchedRef = useRef(false);
+  const wasPausedRef = useRef(true);
 
   // Initialize floor layout and player spawn
   useEffect(() => {
@@ -239,6 +246,8 @@ function DungeonScene({
 
     const generated = generateDungeonFloor(floorLevel, totalPower, Date.now() + floorLevel * 1000);
     setFloorData(generated.floorData);
+    setStairsUnlocked(false);
+    floorLatchRef.current.reset();
     floorDataRef.current = generated.floorData;
     setEnemies(generated.enemies);
     setChests(generated.floorData.chests);
@@ -442,6 +451,25 @@ function DungeonScene({
       )
       .normalize();
 
+    // Aim assist: nudge toward the closest live enemy within a narrow cone.
+    if (getConfig('enableAutoAimAssist')) {
+      const minDot = Math.cos((AIM_ASSIST_CONE_DEG * Math.PI) / 180);
+      let best = minDot;
+      const aimDir = new THREE.Vector3();
+      enemiesRef.current.forEach((enemy) => {
+        if (enemy.hp <= 0) return;
+        scratchVec1.set(enemy.pos[0], enemy.pos[1] + 0.8, enemy.pos[2]);
+        if (pPos.distanceTo(scratchVec1) > AIM_ASSIST_RANGE) return;
+        scratchVec2.subVectors(scratchVec1, pPos).normalize();
+        const dot = forwardVec.dot(scratchVec2);
+        if (dot > best) {
+          best = dot;
+          aimDir.copy(scratchVec2);
+        }
+      });
+      if (best > minDot) forwardVec.copy(aimDir);
+    }
+
     const speed = 18.0;
     const newProj: Projectile = {
       id: `proj_p_${Date.now()}_${Math.random()}`,
@@ -546,12 +574,11 @@ function DungeonScene({
 
     // Check Stairs / Floor Exit Portal
     const stairs = floorData.stairs;
-    if (stairs.unlocked) {
-      scratchVec1.set(stairs.pos[0], stairs.pos[1], stairs.pos[2]);
-      if (pPos.distanceTo(scratchVec1) < 3.5) {
-        gameAudio.playPowerupChime();
-        onFloorClear();
-      }
+    scratchVec1.set(stairs.pos[0], stairs.pos[1], stairs.pos[2]);
+    const distance = pPos.distanceTo(scratchVec1);
+    if (stairsUnlocked && distance < 3.5 && floorLatchRef.current.tryFire()) {
+      gameAudio.playPowerupChime();
+      onFloorClear();
     }
   };
 
@@ -584,7 +611,7 @@ function DungeonScene({
     }
 
     if (enemy.isBoss) {
-      floorData.stairs.unlocked = true;
+      setStairsUnlocked(true);
       spawnFloatingText('STAIRS TO NEXT FLOOR OPEN!', enemy.pos, '#10b981');
       onBossDefeated?.();
     }
@@ -592,8 +619,12 @@ function DungeonScene({
 
   // Main 60FPS Game & Physics Loop
   useFrame((_, delta) => {
-    if (gameState.status !== 'PLAYING') return;
-    const dt = Math.min(delta, 0.1);
+    if (paused) {
+      wasPausedRef.current = true;
+      return;
+    }
+    const dt = frameDelta(delta, wasPausedRef.current);
+    wasPausedRef.current = false;
 
     // Handle touch look delta from mobile
     if (touchLookDeltaRef.current.dx !== 0 || touchLookDeltaRef.current.dy !== 0) {
@@ -1274,13 +1305,13 @@ function DungeonScene({
         <mesh position={[0, 0.45, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.2, 1.5, 24]} />
           <meshStandardMaterial
-            color={floorData.stairs.unlocked ? '#10b981' : '#64748b'}
-            emissive={floorData.stairs.unlocked ? '#059669' : '#0f172a'}
-            emissiveIntensity={floorData.stairs.unlocked ? 2.5 : 0.2}
+            color={stairsUnlocked ? '#10b981' : '#64748b'}
+            emissive={stairsUnlocked ? '#059669' : '#0f172a'}
+            emissiveIntensity={stairsUnlocked ? 2.5 : 0.2}
             side={THREE.DoubleSide}
           />
         </mesh>
-        {floorData.stairs.unlocked && (
+        {stairsUnlocked && (
           <pointLight
             position={[0, 1.2, 0]}
             intensity={20}

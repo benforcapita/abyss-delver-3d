@@ -64,7 +64,7 @@
       "name": "defaultMusicVolume",
       "type": "number",
       "label": "Default Music Volume",
-      "default": 0.45,
+      "default": 0.15,
       "min": 0,
       "max": 1,
       "step": 0.05
@@ -78,6 +78,6 @@
     "spellDamage": 45,
     "lookSensitivity": 1.8,
     "enableAutoAimAssist": true,
-    "defaultMusicVolume": 0.45
+    "defaultMusicVolume": 0.15
   }
 }
