@@ -53,6 +53,43 @@ function createEmptyActions(): Record<InputAction, boolean> {
   };
 }
 
+/** Normalized analog joystick output. y = +1 means pushed up (forward). */
+export interface JoystickVector {
+  x: number;
+  y: number;
+}
+
+/** Fraction of the stick radius treated as dead zone around the center. */
+export const JOYSTICK_DEAD_ZONE = 0.12;
+
+/**
+ * Converts a pointer offset (px) from the joystick center into a normalized
+ * analog vector. Magnitude is 0 inside the dead zone, scales linearly up to
+ * the radius, and clamps to 1 beyond it so diagonal pushes never exceed a
+ * unit vector.
+ */
+export function computeJoystickVector(
+  dx: number,
+  dy: number,
+  radius: number,
+  deadZone: number = JOYSTICK_DEAD_ZONE,
+): JoystickVector {
+  if (!(radius > 0)) return {x: 0, y: 0};
+  const nx = dx / radius;
+  // Screen Y grows downward; joystick "up" must map to forward (+y).
+  const ny = -dy / radius;
+  const magnitude = Math.hypot(nx, ny);
+  if (magnitude === 0 || magnitude <= deadZone) return {x: 0, y: 0};
+  const clamped = Math.min(1, magnitude);
+  return {x: (nx / magnitude) * clamped, y: (ny / magnitude) * clamped};
+}
+
+/** Zeroes a joystick vector in place (used by every reset path). */
+export function resetJoystickVector(target: JoystickVector): void {
+  target.x = 0;
+  target.y = 0;
+}
+
 /**
  * Converts a pointer event on the renderer container to NDC coordinates (-1..1).
  * These can be passed directly to raycastGround() or Raycaster.setFromCamera().
