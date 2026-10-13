@@ -376,6 +376,7 @@ function DungeonScene({
   // Player Melee Sword Strike
   const executeAttack = () => {
     if (playerStats.attackCooldown > 0) return;
+    window.dispatchEvent(new CustomEvent('player-attack')); // Lightweight hook used by e2e to count attacks
     swingProgress.current = 1.0;
     gameAudio.playSwordClash();
 
@@ -716,6 +717,7 @@ function DungeonScene({
       if (input.tap) {
         // pointer click / tap attack
         executeAttack();
+        input.tap = false;
       }
     }
 

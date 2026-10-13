@@ -1,4 +1,5 @@
 import {useEffect, useRef, type MutableRefObject, type RefObject} from 'react';
+import {pointerDownStartsAttack} from './attackEdge';
 import {actionsForCode, type BindableAction} from './platform/keybindings';
 import {getSettings} from './platform/settings';
 
@@ -164,7 +165,9 @@ export function useInput(
       if (!container) return;
       const pos = getPointerNDC(event, container);
       inputRef.current.pointer = {...pos, down: true};
-      inputRef.current.actions.tap = true;
+      if (pointerDownStartsAttack(event.pointerType)) {
+        inputRef.current.actions.tap = true;
+      }
     };
 
     const handlePointerMove = (event: PointerEvent) => {
