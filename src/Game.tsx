@@ -14,6 +14,7 @@ import {
   usesGroundTelegraph,
 } from './bossTelegraph';
 import {BossTelegraph} from './components/BossTelegraph';
+import {takeTouchAimYaw} from './softLock';
 import {cameraMoveVector} from './cameraBasis';
 import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
 import {dashDirection, moveInputFrom} from './dash';
@@ -702,6 +703,11 @@ function DungeonScene({
     }
 
     // Trigger action refs from UI / keyboard
+    if (triggerAttackRef.current || triggerSpellRef.current) {
+      const p = playerPos.current;
+      const lockYaw = takeTouchAimYaw({x: p.x, z: p.z}, playerYaw.current, enemiesRef.current);
+      if (lockYaw !== null) playerYaw.current = lockYaw;
+    }
     if (triggerAttackRef.current) {
       executeAttack();
       triggerAttackRef.current = false;

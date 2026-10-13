@@ -13,6 +13,8 @@ export interface UserSettings {
   musicVolume: number;
   /** Sound-effects volume, 0..1. */
   sfxVolume: number;
+  /** Touch auto-aim soft lock on SLASH / SPELL. */
+  touchSoftLock: boolean;
   /** Camera shake on damage. Defaults on; reduced-motion still suppresses it. */
   screenShake: boolean;
   /** Rebindable keyboard controls (KeyboardEvent.code per action). */
@@ -32,6 +34,7 @@ export const DEFAULT_SETTINGS: Readonly<UserSettings> = Object.freeze({
   // Matches BackgroundMusic's historical default so out-of-the-box sound is unchanged.
   musicVolume: 0.15,
   sfxVolume: 0.7,
+  touchSoftLock: true,
   screenShake: playgroundConfig.values?.screenShake !== false,
   keyBindings: DEFAULT_KEY_BINDINGS,
 });
@@ -58,6 +61,7 @@ export function normalizeSettings(raw: unknown): UserSettings {
       typeof src.enableAutoAimAssist === 'boolean' ? src.enableAutoAimAssist : D.enableAutoAimAssist,
     musicVolume: clampNum(src.musicVolume ?? src.defaultMusicVolume, L.musicVolume.min, L.musicVolume.max, D.musicVolume),
     sfxVolume: clampNum(src.sfxVolume ?? src.defaultSfxVolume, L.sfxVolume.min, L.sfxVolume.max, D.sfxVolume),
+    touchSoftLock: typeof src.touchSoftLock === 'boolean' ? src.touchSoftLock : D.touchSoftLock,
     screenShake: typeof src.screenShake === 'boolean' ? src.screenShake : D.screenShake,
     keyBindings: normalizeBindings(src.keyBindings),
   };
