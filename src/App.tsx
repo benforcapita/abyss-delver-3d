@@ -13,6 +13,7 @@ import {
   Menu as MenuIcon,
   Play,
   RotateCw,
+  Settings,
   Shield,
   Sparkles,
   Sword,
@@ -44,6 +45,8 @@ import {
   useIsMobile,
 } from './utils/helper';
 import {sdk, useGameLifecycle} from './platform/lifecycle';
+import {getSettings, saveSettings, subscribeSettings} from './platform/settings';
+import {SettingsPanel} from './components/SettingsPanel';
 import {FINAL_FLOOR, floorClearScore, isVictory, victoryBonus} from './rules';
 import {loadBest, saveBest, type BestScore} from './bestScore';
 import {isGamePaused} from './pause';
@@ -108,6 +111,13 @@ export default function App() {
   const [musicMuted, setMusicMuted] = useState(false);
   const [isGameMenuOpen, setIsGameMenuOpen] = useState(false);
   const [isHowToPlayOpen, setIsHowToPlayOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState(getSettings);
+  useEffect(() => subscribeSettings(setSettings), []);
+  // SFX volume is applied live to the procedural WebAudio master.
+  useEffect(() => {
+    gameAudio.setVolume(settings.sfxVolume);
+  }, [settings.sfxVolume]);
   const [howToPlaySource, setHowToPlaySource] = useState<'main' | 'game'>('main');
 
   // Player RPG stats
@@ -417,6 +427,7 @@ export default function App() {
         }
         isPlaying={isMusicPlaying}
         isMuted={musicMuted}
+        volume={settings.musicVolume}
       />
 
       {/* 3D WebGL Canvas Viewport */}
@@ -734,7 +745,26 @@ export default function App() {
               <BookOpen className="w-4 h-4 text-amber-400" />
               HOW TO PLAY & CONTROLS
             </button>
+
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              data-testid="settings-button"
+              className="w-full mt-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 px-4 py-2.5 rounded-full font-bold text-xs md:text-sm transition-colors flex items-center justify-center gap-2">
+              <Settings className="w-4 h-4 text-amber-400" />
+              SETTINGS
+            </button>
           </div>
+        </MenuOverlay>
+      )}
+
+      {/* Settings Panel (from main menu) */}
+      {isSettingsOpen && (
+        <MenuOverlay tone="neutral" zIndex={50}>
+          <SettingsPanel
+            settings={settings}
+            onChange={(patch) => saveSettings(patch)}
+            onClose={() => setIsSettingsOpen(false)}
+          />
         </MenuOverlay>
       )}
 

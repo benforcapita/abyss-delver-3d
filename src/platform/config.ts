@@ -1,7 +1,8 @@
 import playgroundConfig from '../../playground_config.json';
 import {getJSON} from './storage';
+import {SETTINGS_KEY, getSettings} from './settings';
 
-export const SETTINGS_KEY = 'ad3d.settings';
+export {SETTINGS_KEY};
 
 type ConfigMap = Record<string, unknown>;
 
@@ -25,5 +26,11 @@ const merged: ConfigMap = {
  * localStorage ('ad3d.settings'). Returns undefined for unknown keys.
  */
 export function getConfig<T = unknown>(key: string): T | undefined {
+  // Player settings (Settings panel) are live and take precedence.
+  const s = getSettings();
+  if (key === 'lookSensitivity') return s.lookSensitivity as T;
+  if (key === 'enableAutoAimAssist') return s.enableAutoAimAssist as T;
+  if (key === 'defaultMusicVolume') return s.musicVolume as T;
+  if (key === 'defaultSfxVolume') return s.sfxVolume as T;
   return merged[key] as T | undefined;
 }
