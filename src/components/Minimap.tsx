@@ -126,6 +126,7 @@ function MinimapCanvas({bridge}: {bridge: MutableRefObject<MinimapBridge>}) {
   return (
     <div
       data-testid="minimap"
+      data-layout-obstacle="true"
       role="img"
       aria-label="Dungeon minimap"
       className="pointer-events-none w-[9.25rem] shrink-0 rounded-md border border-amber-500/70 bg-black/80 p-1.5 shadow-xl [@media(max-height:420px)]:w-[6.75rem]">

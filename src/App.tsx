@@ -25,6 +25,7 @@ import {
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {AVAILABLE_MUSIC_TRACKS, getConfig} from './constants';
 import {ActionButtons} from './components/ActionButtons';
+import {TouchLookZone} from './components/TouchLookZone';
 import {VirtualJoystick} from './components/VirtualJoystick';
 import {Game} from './Game';
 import {DebugPanel} from './components/DebugPanel';
@@ -229,6 +230,7 @@ export default function App() {
   const triggerInteractRef = useRef(false);
   const joystickMoveRef = useRef({x: 0, y: 0});
   const touchLookDeltaRef = useRef({dx: 0, dy: 0});
+  const interactAvailableRef = useRef(false);
 
   // Current boss & dungeon floor data for HUD
   const currentBossRef = useRef<EnemyEntity | null>(null);
@@ -512,9 +514,6 @@ export default function App() {
     ['PLAYING', 'PAUSED', 'LEVEL_COMPLETE'].includes(gameState.status) &&
     !musicMuted;
 
-  // Touch look drag handler on mobile
-  const touchLookStartRef = useRef<{x: number; y: number} | null>(null);
-
   const getRarityBadge = (rarity: ItemRarity) => {
     switch (rarity) {
       case 'legendary':
@@ -561,6 +560,7 @@ export default function App() {
           triggerInteractRef={triggerInteractRef}
           joystickMoveRef={joystickMoveRef}
           touchLookDeltaRef={touchLookDeltaRef}
+          interactAvailableRef={interactAvailableRef}
           currentBossRef={currentBossRef}
           activeEnemiesCountRef={activeEnemiesCountRef}
           floorDataRef={floorDataRef}
@@ -580,7 +580,7 @@ export default function App() {
             {/* Top Bar: Floor, Gold, Score, and Mandatory Game Menu Button */}
             <div className="w-full flex items-start justify-between gap-2">
               {/* Left Badges */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2" data-testid="hud-badges" data-layout-obstacle="true">
                 <div className="bg-black/70 backdrop-blur border border-amber-500/40 px-3 py-1 rounded-lg flex items-center gap-2 shadow-lg">
                   <Flame className="w-4 h-4 text-amber-400 animate-pulse" />
                   <span className="text-xs md:text-sm font-bold tracking-wider text-amber-400">
@@ -605,7 +605,7 @@ export default function App() {
 
               {/* Top Center: Floor Boss Health Bar */}
               {bossHudState && bossHudState.hp > 0 && (
-                <div className="flex-1 min-w-0 max-w-xs md:max-w-md mx-2 flex flex-col items-center animate-fade-in">
+                <div className="flex-1 min-w-0 max-w-xs md:max-w-md mx-2 flex flex-col items-center animate-fade-in" data-testid="hud-boss" data-layout-obstacle="true">
                   <div className="flex items-center gap-2 mb-1">
                     <Flame className="w-4 h-4 text-red-500" />
                     <span className="text-xs md:text-sm font-black tracking-widest text-red-400 uppercase">
@@ -628,6 +628,8 @@ export default function App() {
                 <div className="pointer-events-auto">
                   <button
                     onClick={() => setIsGameMenuOpen(true)}
+                    data-testid="hud-menu"
+                    data-layout-obstacle="true"
                     className="bg-black/80 hover:bg-zinc-800 active:scale-95 text-amber-400 border border-amber-500/50 px-3 py-1.5 rounded-lg font-bold text-xs md:text-sm flex items-center gap-1.5 shadow-xl transition-all">
                     <MenuIcon className="w-4 h-4" />
                     <span>MENU</span>
@@ -696,6 +698,7 @@ export default function App() {
               {/* Health & Mana Orbs / Gauges */}
               <div
                 data-testid="hud-vitals"
+                data-layout-obstacle="true"
                 className="flex flex-col gap-1.5 bg-black/80 backdrop-blur border border-zinc-800 p-2.5 rounded-xl shadow-xl w-48 md:w-56">
                 {/* Health Bar */}
                 <div>
@@ -845,33 +848,9 @@ export default function App() {
           </div>
         )}
 
-        {/* Mobile Touch Drag Look Area (Right Side of Screen) */}
         {isMobile && gameState.status === 'PLAYING' && (
-          <div
-            className="absolute inset-y-0 right-0 w-1/2 pointer-events-auto touch-none z-10"
-            onPointerDown={(e) => {
-              touchLookStartRef.current = {x: e.clientX, y: e.clientY};
-            }}
-            onPointerMove={(e) => {
-              if (touchLookStartRef.current) {
-                const dx = e.clientX - touchLookStartRef.current.x;
-                const dy = e.clientY - touchLookStartRef.current.y;
-                touchLookDeltaRef.current = {dx, dy};
-                touchLookStartRef.current = {x: e.clientX, y: e.clientY};
-              }
-            }}
-            onPointerUp={() => {
-              touchLookStartRef.current = null;
-            }}
-            onPointerCancel={() => {
-              touchLookStartRef.current = null;
-            }}
-          />
-        )}
-
-        {/* Mobile Virtual Joystick & Action Buttons Overlay */}
-        {isMobile && gameState.status === 'PLAYING' && (
-          <div className="absolute inset-x-0 bottom-3 px-6 pointer-events-none flex justify-between items-end z-30 hud-safe-controls" data-testid="mobile-controls">
+          <>
+            <TouchLookZone deltaRef={touchLookDeltaRef} />
             <VirtualJoystick moveRef={joystickMoveRef} />
             <ActionButtons
               onAttack={() => {
@@ -886,8 +865,9 @@ export default function App() {
               onInteract={() => (triggerInteractRef.current = true)}
               onPotion={drinkPotion}
               potions={playerStats.potions}
+              interactAvailableRef={interactAvailableRef}
             />
-          </div>
+          </>
         )}
       </div>
 

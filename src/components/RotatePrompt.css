@@ -22,22 +22,25 @@
 }
 
 @media (pointer: coarse) and (orientation: portrait) {
+  /* Banner, not a full-screen hit target. The start button stays visible
+     and receives taps; the prompt must not swallow them. */
   .rotate-prompt {
     position: fixed;
-    inset: 0;
-    z-index: 9999;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 60;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1rem;
-    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
-      env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
-    background: #09090b;
+    gap: 0.25rem;
+    padding: max(0.75rem, env(safe-area-inset-top, 0px)) 1rem 0.75rem;
+    background: rgba(9, 9, 11, 0.92);
     color: #fcd34d;
     font-family: sans-serif;
     text-align: center;
-    pointer-events: auto;
+    pointer-events: none;
     touch-action: none;
   }
 }
