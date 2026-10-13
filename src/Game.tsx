@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import {getConfig} from './constants';
 import {generateDungeonFloor} from './dungeonGenerator';
 import {InputSnapshot, useInput} from './input';
+import {enemyKillScore, isGameOver} from './rules';
 import {
   ChestEntity,
   DungeonFloorData,
@@ -32,6 +33,7 @@ interface GameProps {
   setPlayerStats: React.Dispatch<React.SetStateAction<PlayerStats>>;
   onLootFound: (item: LootItem) => void;
   onFloorClear: () => void;
+  onBossDefeated?: () => void;
   triggerAttackRef: MutableRefObject<boolean>;
   triggerSpellRef: MutableRefObject<boolean>;
   triggerDashRef: MutableRefObject<boolean>;
@@ -146,6 +148,7 @@ function DungeonScene({
   setPlayerStats,
   onLootFound,
   onFloorClear,
+  onBossDefeated,
   triggerAttackRef,
   triggerSpellRef,
   triggerDashRef,
@@ -215,6 +218,9 @@ function DungeonScene({
   const swingProgress = useRef(0);
   const castProgress = useRef(0);
 
+  // Latch so GAME_OVER status & defeat motif fire exactly once per run
+  const gameOverLatchedRef = useRef(false);
+
   // Initialize floor layout and player spawn
   useEffect(() => {
     const totalPower =
@@ -242,6 +248,13 @@ function DungeonScene({
 
     gameAudio.playFootstepStone();
   }, [floorLevel]);
+
+  // Reset the game-over latch whenever a new run begins
+  useEffect(() => {
+    if (gameState.status === 'PLAYING') {
+      gameOverLatchedRef.current = false;
+    }
+  }, [gameState.status]);
 
   // Pointer lock for Desktop First Person FPS mouse look
   useEffect(() => {
@@ -537,7 +550,7 @@ function DungeonScene({
   const handleEnemyDefeated = (enemy: EnemyEntity) => {
     gameAudio.playChiptuneExplosion();
     const goldEarned = enemy.isBoss ? 150 : 25 + floorLevel * 5;
-    const scoreEarned = enemy.isBoss ? 1000 * floorLevel : 150 * floorLevel;
+    const scoreEarned = enemyKillScore(floorLevel, enemy.isBoss);
 
     setGameState((prev) => ({
       ...prev,
@@ -564,6 +577,7 @@ function DungeonScene({
     if (enemy.isBoss) {
       floorData.stairs.unlocked = true;
       spawnFloatingText('STAIRS TO NEXT FLOOR OPEN!', enemy.pos, '#10b981');
+      onBossDefeated?.();
     }
   };
 
@@ -966,7 +980,8 @@ function DungeonScene({
 
     setPlayerStats((prev) => {
       const newHp = Math.max(0, prev.hp - finalDmg);
-      if (newHp <= 0) {
+      if (isGameOver(newHp) && !gameOverLatchedRef.current) {
+        gameOverLatchedRef.current = true;
         setGameState((g) => ({...g, status: 'GAME_OVER'}));
         gameAudio.playDefeatMotif();
       }

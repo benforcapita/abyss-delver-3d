@@ -35,6 +35,7 @@ import {formatTime, gameAudio} from './utils';
 import BackgroundMusic from './utils/BackgroundMusic';
 import {GameState, MenuOverlay, Overlay, useIsMobile} from './utils/helper';
 import {sdk, useGameLifecycle} from './platform/lifecycle';
+import {FINAL_FLOOR, floorClearScore, isVictory, victoryBonus} from './rules';
 
 interface CustomWindow extends Window {
   canHandleBackKey?: boolean;
@@ -131,6 +132,11 @@ export default function App() {
 
   // Floor transition modal
   const [showFloorSummary, setShowFloorSummary] = useState(false);
+
+  // Boss defeat & victory bonus tracking (per floor / per run)
+  const [bossDefeated, setBossDefeated] = useState(false);
+  const [victoryBonusAmount, setVictoryBonusAmount] = useState(0);
+  const victoryLatchedRef = useRef(false);
 
   // Action refs triggered from UI & mobile controls
   const triggerAttackRef = useRef(false);
@@ -248,23 +254,37 @@ export default function App() {
     });
   }, []);
 
+  const handleBossDefeated = useCallback(() => {
+    setBossDefeated(true);
+  }, []);
+
   // Floor Clear / Next Level Flow
   const handleFloorClear = useCallback(() => {
-    if (gameState.level >= 5) {
-      // Victory! Slayed final Void Overlord
-      setGameState((prev) => ({...prev, status: 'VICTORY'}));
+    if (isVictory(gameState.level, bossDefeated, true)) {
+      // Victory! Slayed final Void Overlord.
+      // Latch so the per-frame portal check only applies the bonus once.
+      if (victoryLatchedRef.current) return;
+      victoryLatchedRef.current = true;
+      const bonus = victoryBonus(playerStats.hp);
+      setVictoryBonusAmount(bonus);
+      setGameState((prev) => ({
+        ...prev,
+        status: 'VICTORY',
+        score: prev.score + bonus,
+      }));
       gameAudio.playVictoryFanfare();
-    } else {
+    } else if (gameState.level < FINAL_FLOOR) {
       setShowFloorSummary(true);
     }
-  }, [gameState.level]);
+  }, [gameState.level, bossDefeated, playerStats.hp]);
 
   const advanceToNextFloor = () => {
     setShowFloorSummary(false);
+    setBossDefeated(false);
     setGameState((prev) => ({
       ...prev,
       level: prev.level + 1,
-      score: prev.score + 500 * prev.level,
+      score: prev.score + floorClearScore(prev.level),
     }));
     // Restore partial health on descending
     setPlayerStats((prev) => ({
@@ -310,6 +330,9 @@ export default function App() {
     setIsGameMenuOpen(false);
     setIsHowToPlayOpen(false);
     setShowFloorSummary(false);
+    setBossDefeated(false);
+    setVictoryBonusAmount(0);
+    victoryLatchedRef.current = false;
 
     sdk.startGame();
   }, []);
@@ -371,6 +394,7 @@ export default function App() {
           setPlayerStats={setPlayerStats}
           onLootFound={handleLootFound}
           onFloorClear={handleFloorClear}
+          onBossDefeated={handleBossDefeated}
           triggerAttackRef={triggerAttackRef}
           triggerSpellRef={triggerSpellRef}
           triggerDashRef={triggerDashRef}
@@ -915,7 +939,7 @@ export default function App() {
       {gameState.status === 'VICTORY' && (
         <Overlay
           title="PRIME RELIC SECURED!"
-          description={`You conquered all 5 floors and defeated the Void Overlord! Final Score: ${gameState.score}`}
+          description={`You conquered all ${FINAL_FLOOR} floors and defeated the Void Overlord! Final Score: ${gameState.score} (incl. Victory Bonus +${victoryBonusAmount})`}
           actionLabel="NEW ADVENTURE"
           onAction={initGame}
           icon={<Trophy className="w-6 h-6 text-black" />}
