@@ -7,6 +7,7 @@ import React, {Suspense, useEffect, useMemo, useRef, useState} from 'react';
 import * as THREE from 'three';
 import {getConfig} from './constants';
 import {generateDungeonFloor} from './dungeonGenerator';
+import {createOneShotLatch} from './floorLatch';
 import {InputSnapshot, useInput} from './input';
 import {enemyKillScore, isGameOver} from './rules';
 import {
@@ -167,6 +168,8 @@ function DungeonScene({
 
   // Floor and mob data
   const floorLevel = gameState.level;
+  const [stairsUnlocked, setStairsUnlocked] = useState(false);
+  const floorLatchRef = useRef(createOneShotLatch());
   const [floorData, setFloorData] = useState<DungeonFloorData>(() => {
     const {floorData} = generateDungeonFloor(floorLevel, 0);
     return floorData;
@@ -230,6 +233,8 @@ function DungeonScene({
 
     const generated = generateDungeonFloor(floorLevel, totalPower, Date.now() + floorLevel * 1000);
     setFloorData(generated.floorData);
+    setStairsUnlocked(false);
+    floorLatchRef.current.reset();
     floorDataRef.current = generated.floorData;
     setEnemies(generated.enemies);
     setChests(generated.floorData.chests);
@@ -537,12 +542,11 @@ function DungeonScene({
 
     // Check Stairs / Floor Exit Portal
     const stairs = floorData.stairs;
-    if (stairs.unlocked) {
-      scratchVec1.set(stairs.pos[0], stairs.pos[1], stairs.pos[2]);
-      if (pPos.distanceTo(scratchVec1) < 3.5) {
-        gameAudio.playPowerupChime();
-        onFloorClear();
-      }
+    scratchVec1.set(stairs.pos[0], stairs.pos[1], stairs.pos[2]);
+    const distance = pPos.distanceTo(scratchVec1);
+    if (stairsUnlocked && distance < 3.5 && floorLatchRef.current.tryFire()) {
+      gameAudio.playPowerupChime();
+      onFloorClear();
     }
   };
 
@@ -575,7 +579,7 @@ function DungeonScene({
     }
 
     if (enemy.isBoss) {
-      floorData.stairs.unlocked = true;
+      setStairsUnlocked(true);
       spawnFloatingText('STAIRS TO NEXT FLOOR OPEN!', enemy.pos, '#10b981');
       onBossDefeated?.();
     }
@@ -1244,13 +1248,13 @@ function DungeonScene({
         <mesh position={[0, 0.45, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.2, 1.5, 24]} />
           <meshStandardMaterial
-            color={floorData.stairs.unlocked ? '#10b981' : '#64748b'}
-            emissive={floorData.stairs.unlocked ? '#059669' : '#0f172a'}
-            emissiveIntensity={floorData.stairs.unlocked ? 2.5 : 0.2}
+            color={stairsUnlocked ? '#10b981' : '#64748b'}
+            emissive={stairsUnlocked ? '#059669' : '#0f172a'}
+            emissiveIntensity={stairsUnlocked ? 2.5 : 0.2}
             side={THREE.DoubleSide}
           />
         </mesh>
-        {floorData.stairs.unlocked && (
+        {stairsUnlocked && (
           <pointLight
             position={[0, 1.2, 0]}
             intensity={20}
