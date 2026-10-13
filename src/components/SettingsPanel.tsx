@@ -112,6 +112,14 @@ export function SettingsPanel({settings, onChange, onClose}: SettingsPanelProps)
         display={settings.lookSensitivity.toFixed(1)}
         onChange={(v) => onChange({lookSensitivity: v})}
       />
+      <Slider
+        id="setting-touch-sensitivity"
+        label="Touch Look Sensitivity"
+        value={settings.touchLookSensitivity}
+        {...L.touchLookSensitivity}
+        display={settings.touchLookSensitivity.toFixed(1)}
+        onChange={(v) => onChange({touchLookSensitivity: v})}
+      />
       <label className="flex justify-between items-center text-xs font-bold text-zinc-300">
         <span>Aim Assist</span>
         <input

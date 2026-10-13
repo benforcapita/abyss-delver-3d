@@ -14,6 +14,7 @@ import {
   usesGroundTelegraph,
 } from './bossTelegraph';
 import {BossTelegraph} from './components/BossTelegraph';
+import {getTouchLookSensitivity} from './platform/settings';
 import {takeTouchAimYaw} from './softLock';
 import {cameraMoveVector} from './cameraBasis';
 import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
@@ -692,7 +693,7 @@ function DungeonScene({
 
     // Handle touch look delta from mobile
     if (touchLookDeltaRef.current.dx !== 0 || touchLookDeltaRef.current.dy !== 0) {
-      const sens = getConfig('lookSensitivity') * 0.0035;
+      const sens = getTouchLookSensitivity() * 0.0035;
       playerYaw.current -= touchLookDeltaRef.current.dx * sens;
       playerPitch.current -= touchLookDeltaRef.current.dy * sens;
       playerPitch.current = Math.max(
