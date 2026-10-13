@@ -27,7 +27,6 @@ import {GameState} from './utils/helper';
 interface GameProps {
   gameState: GameState;
   setGameState: React.Dispatch<React.SetStateAction<GameState>>;
-  exitChat: (payload: Record<string, unknown>) => Promise<void>;
   gameStateRef: MutableRefObject<GameState>;
   playerStats: PlayerStats;
   setPlayerStats: React.Dispatch<React.SetStateAction<PlayerStats>>;
