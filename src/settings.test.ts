@@ -19,6 +19,12 @@ beforeEach(() => {
 });
 
 describe('settings store', () => {
+  it('has the agreed defaults', () => {
+    expect(S.DEFAULT_SETTINGS).toEqual({
+      lookSensitivity: 1.8, enableAutoAimAssist: true, musicVolume: 0.15, sfxVolume: 0.7,
+    });
+  });
+
   it('uses defaults when nothing is saved', () => {
     expect(S.loadSettings()).toEqual(S.DEFAULT_SETTINGS);
     expect(S.getSettings()).toEqual(S.DEFAULT_SETTINGS);

@@ -278,3 +278,8 @@ export const AVAILABLE_MUSIC_TRACKS: readonly MusicTrack[] = [
     description: 'Cryptic crypt depths and eerie subterranean dungeon corridors.',
   },
 ];
+
+/** Spell aim assist: max angle (degrees) between aim and target to nudge. */
+export const AIM_ASSIST_CONE_DEG = 20;
+/** Spell aim assist: max distance (world units) to a target. */
+export const AIM_ASSIST_RANGE = 20;

@@ -1,4 +1,5 @@
 import {getJSON, setJSON} from './storage';
+import playgroundConfig from '../../playground_config.json';
 
 /** localStorage key shared with src/platform/config.ts. */
 export const SETTINGS_KEY = 'ad3d.settings';
@@ -21,8 +22,10 @@ export const SETTINGS_LIMITS = {
 
 export const DEFAULT_SETTINGS: Readonly<UserSettings> = Object.freeze({
   lookSensitivity: 1.8,
-  enableAutoAimAssist: true,
-  musicVolume: 0.45,
+  // Mirrors the existing config default (playground_config.json, currently true).
+  enableAutoAimAssist: playgroundConfig.values?.enableAutoAimAssist === true,
+  // Matches BackgroundMusic's historical default so out-of-the-box sound is unchanged.
+  musicVolume: 0.15,
   sfxVolume: 0.7,
 });
 

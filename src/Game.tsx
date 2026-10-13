@@ -5,7 +5,7 @@ import {Bloom, EffectComposer} from '@react-three/postprocessing';
 import type {MutableRefObject} from 'react';
 import React, {Suspense, useEffect, useMemo, useRef, useState} from 'react';
 import * as THREE from 'three';
-import {getConfig} from './constants';
+import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
 import {generateDungeonFloor} from './dungeonGenerator';
 import {InputSnapshot, useInput} from './input';
 import {enemyKillScore, isGameOver} from './rules';
@@ -435,12 +435,13 @@ function DungeonScene({
 
     // Aim assist: nudge toward the closest live enemy within a narrow cone.
     if (getConfig('enableAutoAimAssist')) {
-      let best = 0.94;
+      const minDot = Math.cos((AIM_ASSIST_CONE_DEG * Math.PI) / 180);
+      let best = minDot;
       const aimDir = new THREE.Vector3();
       enemiesRef.current.forEach((enemy) => {
         if (enemy.hp <= 0) return;
         scratchVec1.set(enemy.pos[0], enemy.pos[1] + 0.8, enemy.pos[2]);
-        if (pPos.distanceTo(scratchVec1) > 20) return;
+        if (pPos.distanceTo(scratchVec1) > AIM_ASSIST_RANGE) return;
         scratchVec2.subVectors(scratchVec1, pPos).normalize();
         const dot = forwardVec.dot(scratchVec2);
         if (dot > best) {
@@ -448,7 +449,7 @@ function DungeonScene({
           aimDir.copy(scratchVec2);
         }
       });
-      if (best > 0.94) forwardVec.copy(aimDir);
+      if (best > minDot) forwardVec.copy(aimDir);
     }
 
     const speed = 18.0;
