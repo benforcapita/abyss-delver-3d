@@ -5,6 +5,7 @@ import {
   applyHitFlash,
   createFlashMap,
   hitFlashAmount,
+  holdHitFlashes,
   isHitFlashing,
   pruneHitFlashes,
   triggerHitFlash,
@@ -37,6 +38,18 @@ describe('hit flash timing', () => {
     triggerHitFlash(flashes, 'mob', 80);
     expect(isHitFlashing(flashes, 'mob', 150)).toBe(true);
     expect(isHitFlashing(flashes, 'mob', 180)).toBe(false);
+  });
+
+  it('a pause holds the remaining window, then unpause consumes it', () => {
+    const flashes = createFlashMap();
+    triggerHitFlash(flashes, 'mob', 1_000);
+    expect(hitFlashAmount(flashes, 'mob', 1_040)).toBeCloseTo(0.6);
+
+    holdHitFlashes(flashes, 500);
+    expect(hitFlashAmount(flashes, 'mob', 1_540)).toBeCloseTo(0.6);
+    expect(isHitFlashing(flashes, 'mob', 1_599)).toBe(true);
+    expect(isHitFlashing(flashes, 'mob', 1_600)).toBe(false);
+    expect(hitFlashAmount(flashes, 'mob', 1_600)).toBe(0);
   });
 
   it('prune drops only expired ids', () => {

@@ -37,6 +37,31 @@ describe('shake decay', () => {
     expect(offset.y).toBeCloseTo(0.5 * SHAKE_AMPLITUDE);
     expect(state.intensity).toBeCloseTo(decayShake(1, 0.2));
   });
+
+  it('pause returns a zero offset and leaves intensity to resume', () => {
+    const state = createShakeState();
+    triggerScreenShake(state, 1);
+    const paused = stepScreenShake(state, 0.5, {
+      enabled: true,
+      paused: true,
+      random: fullRight,
+    });
+    expect(paused).toEqual({x: 0, y: 0});
+    expect(state.intensity).toBe(1);
+
+    const toggledOffWhilePaused = stepScreenShake(state, 0.5, {
+      enabled: false,
+      paused: true,
+      random: fullRight,
+    });
+    expect(toggledOffWhilePaused).toEqual({x: 0, y: 0});
+    expect(state.intensity).toBe(1);
+
+    const resumed = stepScreenShake(state, 0.2, {enabled: true, random: fullRight});
+    expect(resumed.x).toBeCloseTo(0.5 * SHAKE_AMPLITUDE);
+    expect(resumed.y).toBeCloseTo(0.5 * SHAKE_AMPLITUDE);
+    expect(state.intensity).toBeCloseTo(decayShake(1, 0.2));
+  });
 });
 
 describe('screen shake toggle', () => {

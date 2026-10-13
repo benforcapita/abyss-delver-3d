@@ -67,8 +67,11 @@ export function shakeOffset(
 export function stepScreenShake(
   state: ShakeState,
   dt: number,
-  opts: {enabled: boolean; random?: () => number},
+  opts: {enabled: boolean; paused?: boolean; random?: () => number},
 ): ShakeOffset {
+  // Pause freezes the kick: no offset, and intensity is left for unpause.
+  // A toggle-off during the pause clears on the next unpaused step.
+  if (opts.paused) return {x: 0, y: 0};
   if (!opts.enabled) {
     state.intensity = 0;
     return {x: 0, y: 0};

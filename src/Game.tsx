@@ -6,7 +6,7 @@ import type {MutableRefObject} from 'react';
 import React, {Suspense, useEffect, useMemo, useRef, useState} from 'react';
 import * as THREE from 'three';
 import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
-import {applyCameraLocalPose, createFlashMap, PLAYER_FLASH_ID, syncHitFlashes, triggerHitFlash} from './fx/hitFlash';
+import {applyCameraLocalPose, createFlashMap, holdHitFlashes, PLAYER_FLASH_ID, syncHitFlashes, triggerHitFlash} from './fx/hitFlash';
 import {
   createShakeState,
   isScreenShakeEnabled,
@@ -225,7 +225,9 @@ function DungeonScene({
   const isDashing = useRef(false);
   const dashDir = useRef<THREE.Vector3>(new THREE.Vector3());
   const screenShake = useRef(createShakeState());
+  const lastShake = useRef({x: 0, y: 0});
   const hitFlashes = useRef(createFlashMap());
+  const lastFxNow = useRef(0);
   const flashTargets = useRef(new Map<string, THREE.Object3D>());
   const lastFootstepDist = useRef(0);
 
@@ -620,7 +622,23 @@ function DungeonScene({
   useFrame((_, delta) => {
     if (paused) {
       wasPausedRef.current = true;
-      syncHitFlashes(hitFlashes.current, flashTargets.current, performance.now());
+      const now = performance.now();
+      const prevNow = lastFxNow.current;
+      if (prevNow > 0) holdHitFlashes(hitFlashes.current, now - prevNow);
+      syncHitFlashes(hitFlashes.current, flashTargets.current, now);
+      lastFxNow.current = now;
+      const applied = lastShake.current;
+      if (applied.x !== 0 || applied.y !== 0) {
+        camera.position.x -= applied.x;
+        camera.position.y -= applied.y;
+        if (viewmodelRef.current) {
+          viewmodelRef.current.position.x -= applied.x;
+          viewmodelRef.current.position.y -= applied.y;
+        }
+        applied.x = 0;
+        applied.y = 0;
+      }
+      stepScreenShake(screenShake.current, 0, {enabled: isScreenShakeEnabled(), paused: true});
       return;
     }
     const dt = frameDelta(delta, wasPausedRef.current);
@@ -784,6 +802,8 @@ function DungeonScene({
     const shake = stepScreenShake(screenShake.current, dt, {
       enabled: isScreenShakeEnabled(),
     });
+    lastShake.current.x = shake.x;
+    lastShake.current.y = shake.y;
 
     camera.position.set(pPos.x + shake.x, pPos.y + bobOffset + shake.y, pPos.z);
     camera.rotation.order = 'YXZ';
@@ -812,7 +832,9 @@ function DungeonScene({
       flashTargets.current.set(PLAYER_FLASH_ID, viewmodelRef.current);
     }
 
-    syncHitFlashes(hitFlashes.current, flashTargets.current, performance.now());
+    const fxNow = performance.now();
+    syncHitFlashes(hitFlashes.current, flashTargets.current, fxNow);
+    lastFxNow.current = fxNow;
 
     // Update Spike Traps
     trapsRef.current.forEach((trap) => {

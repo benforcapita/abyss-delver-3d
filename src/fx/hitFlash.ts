@@ -56,6 +56,18 @@ export function pruneHitFlashes(flashes: FlashMap, nowMs: number): void {
   }
 }
 
+/**
+ * Pause hold. Adds `elapsedMs` to every deadline so remaining flash time
+ * stays put while the wall clock moves. Call once per paused frame with the
+ * time since the previous sample, then sync at the new `now`.
+ */
+export function holdHitFlashes(flashes: FlashMap, elapsedMs: number): void {
+  if (!(elapsedMs > 0)) return;
+  for (const [id, until] of flashes) {
+    flashes.set(id, until + elapsedMs);
+  }
+}
+
 function tintMaterial(mat: THREE.Material, amount: number): void {
   const std = mat as THREE.MeshStandardMaterial;
   const hasColor = std.color instanceof THREE.Color;
