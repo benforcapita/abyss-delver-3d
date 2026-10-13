@@ -34,9 +34,16 @@ import {
 } from './types';
 import {formatTime, gameAudio} from './utils';
 import BackgroundMusic from './utils/BackgroundMusic';
-import {GameState, MenuOverlay, Overlay, useIsMobile} from './utils/helper';
+import {
+  BestScoreLine,
+  GameState,
+  MenuOverlay,
+  Overlay,
+  useIsMobile,
+} from './utils/helper';
 import {sdk, useGameLifecycle} from './platform/lifecycle';
 import {FINAL_FLOOR, floorClearScore, isVictory, victoryBonus} from './rules';
+import {loadBest, saveBest, type BestScore} from './bestScore';
 import {isGamePaused} from './pause';
 
 interface CustomWindow extends Window {
@@ -160,6 +167,22 @@ export default function App() {
   const [bossHudState, setBossHudState] = useState<EnemyEntity | null>(null);
   const activeEnemiesCountRef = useRef(0);
   const floorDataRef = useRef<DungeonFloorData | null>(null);
+
+  // Best score (persisted in localStorage `ad3d.best.v1`). Saved once per
+  // terminal transition (GAME_OVER / VICTORY), latched until a new run starts.
+  const [best, setBest] = useState<BestScore>(() => loadBest());
+  const bestSavedRef = useRef(false);
+  useEffect(() => {
+    const status = gameState.status;
+    if (status === 'PLAYING') {
+      bestSavedRef.current = false;
+      return;
+    }
+    if ((status === 'GAME_OVER' || status === 'VICTORY') && !bestSavedRef.current) {
+      bestSavedRef.current = true;
+      setBest(saveBest({score: gameState.score, floor: gameState.level}));
+    }
+  }, [gameState.status, gameState.score, gameState.level]);
 
   // Back key support
   useEffect(() => {
@@ -754,6 +777,8 @@ export default function App() {
               bosses, collect tiered enchanted loot, and survive the Abyss.
             </p>
 
+            <BestScoreLine best={best} className="mb-4" />
+
             <button
               onClick={initGame}
               autoFocus
@@ -954,8 +979,9 @@ export default function App() {
           actionLabel="NEW ADVENTURE"
           onAction={initGame}
           icon={<Trophy className="w-6 h-6 text-black" />}
-          tone="victory"
-        />
+          tone="victory">
+          <BestScoreLine best={best} className="mb-6" />
+        </Overlay>
       )}
 
       {/* Game Over Screen */}
@@ -966,8 +992,9 @@ export default function App() {
           actionLabel="TRY AGAIN"
           onAction={initGame}
           icon={<RotateCw className="w-6 h-6 text-black" />}
-          tone="danger"
-        />
+          tone="danger">
+          <BestScoreLine best={best} className="mb-6" />
+        </Overlay>
       )}
     </div>
   );
