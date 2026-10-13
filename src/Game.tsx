@@ -378,8 +378,10 @@ function DungeonScene({
   };
 
   // Player Melee Sword Strike
+  const confirmHeldRef = useRef(false);
   const executeAttack = () => {
     if (playerStats.attackCooldown > 0) return;
+    window.dispatchEvent(new CustomEvent('player-attack')); // Lightweight hook used by e2e to count attacks
     swingProgress.current = 1.0;
     gameAudio.playSwordClash();
 
@@ -720,12 +722,15 @@ function DungeonScene({
     // Input actions from useInput
     const input = inputRef.current?.actions;
     if (input) {
-      if (input.confirm && !triggerAttackRef.current) {
+      // Edge-triggered: LMB (bound 'Mouse0') / attack key attacks once per press.
+      if (input.confirm && !confirmHeldRef.current && !triggerAttackRef.current) {
         executeAttack();
       }
+      confirmHeldRef.current = input.confirm;
       if (input.tap) {
         // pointer click / tap attack
         executeAttack();
+        input.tap = false;
       }
     }
 
