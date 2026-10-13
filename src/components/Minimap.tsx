@@ -48,7 +48,7 @@ function paint(
     }
   }
 
-  const markers = visibleMarkers(mask, gridSize, bridge.chests, bridge.enemies);
+  const markers = visibleMarkers(mask, gridSize, bridge.chests, bridge.enemies, bridge.stairs);
   for (const marker of markers) {
     const cx = marker.x * cell;
     const cy = marker.y * cell;
@@ -56,6 +56,18 @@ function paint(
       const size = Math.max(3, cell * 0.62);
       ctx.fillStyle = marker.opened ? '#78716c' : '#fbbf24';
       ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
+      continue;
+    }
+    if (marker.kind === 'stairs') {
+      const size = Math.max(2.5, cell * 0.42);
+      ctx.fillStyle = '#34d399';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - size);
+      ctx.lineTo(cx + size, cy);
+      ctx.lineTo(cx, cy + size);
+      ctx.lineTo(cx - size, cy);
+      ctx.closePath();
+      ctx.fill();
       continue;
     }
     ctx.fillStyle = marker.kind === 'boss' ? '#fb7185' : '#ef4444';
@@ -116,20 +128,21 @@ function MinimapCanvas({bridge}: {bridge: MutableRefObject<MinimapBridge>}) {
       data-testid="minimap"
       role="img"
       aria-label="Dungeon minimap"
-      className="pointer-events-none absolute top-16 right-3 z-30 w-[168px] rounded-md border border-amber-500/70 bg-black/80 p-2 shadow-xl">
-      <div className="mb-1 flex items-center justify-between text-[10px] font-bold tracking-[0.18em] text-amber-400">
-        <span>MINIMAP</span>
+      className="pointer-events-none w-[9.25rem] shrink-0 rounded-md border border-amber-500/70 bg-black/80 p-1.5 shadow-xl [@media(max-height:420px)]:w-[6.75rem]">
+      <div className="mb-0.5 text-[10px] font-bold tracking-[0.18em] text-amber-400">
+        MINIMAP
       </div>
       <canvas
         ref={canvasRef}
         width={CSS_SIZE}
         height={CSS_SIZE}
-        className="block h-[152px] w-[152px] rounded-sm"
+        className="block aspect-square h-auto w-full rounded-sm"
       />
-      <div className="mt-1 flex items-center justify-between text-[9px] text-zinc-400">
+      <div className="mt-0.5 flex flex-wrap justify-between gap-x-1 text-[9px] text-zinc-400">
         <span className="text-amber-400">you</span>
         <span className="text-amber-300">chest</span>
         <span className="text-red-400">foe</span>
+        <span className="text-emerald-400">stairs</span>
       </div>
     </div>
   );

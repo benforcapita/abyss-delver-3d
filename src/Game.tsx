@@ -5,11 +5,10 @@ import {Bloom, EffectComposer} from '@react-three/postprocessing';
 import type {MutableRefObject} from 'react';
 import React, {Suspense, useEffect, useMemo, useRef, useState} from 'react';
 import * as THREE from 'three';
-import {Minimap} from './components/Minimap';
 import {getConfig} from './constants';
 import {generateDungeonFloor} from './dungeonGenerator';
 import {InputSnapshot, useInput} from './input';
-import {createMinimapBridge, syncMinimapBridge, type MinimapBridge} from './minimap';
+import {syncMinimapBridge, type MinimapBridge} from './minimap';
 import {enemyKillScore, isGameOver} from './rules';
 import {
   ChestEntity,
@@ -45,6 +44,7 @@ interface GameProps {
   currentBossRef: MutableRefObject<EnemyEntity | null>;
   activeEnemiesCountRef: MutableRefObject<number>;
   floorDataRef: MutableRefObject<DungeonFloorData | null>;
+  minimapBridgeRef: MutableRefObject<MinimapBridge>;
 }
 
 // Scratch temporaries for zero-allocation game loop
@@ -161,10 +161,7 @@ function DungeonScene({
   activeEnemiesCountRef,
   floorDataRef,
   minimapBridgeRef,
-}: GameProps & {
-  inputRef: MutableRefObject<InputSnapshot>;
-  minimapBridgeRef: MutableRefObject<MinimapBridge>;
-}): React.ReactElement {
+}: GameProps & {inputRef: MutableRefObject<InputSnapshot>}): React.ReactElement {
   const {camera, gl} = useThree();
 
   // Textures
@@ -260,6 +257,7 @@ function DungeonScene({
       playerYaw: 0,
       enemies: generated.enemies,
       chests: generated.floorData.chests,
+      stairs: generated.floorData.stairs,
     });
 
     gameAudio.playFootstepStone();
@@ -989,6 +987,7 @@ function DungeonScene({
       playerYaw: playerYaw.current,
       enemies: enemiesRef.current,
       chests: chestsRef.current,
+      stairs: floorData.stairs,
     });
   });
 
@@ -1493,7 +1492,6 @@ function DungeonScene({
 export function Game(props: GameProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useInput(containerRef, {enabled: true});
-  const minimapBridgeRef = useRef(createMinimapBridge());
 
   return (
     <div ref={containerRef} className="w-full h-full canvas-wrapper relative">
@@ -1527,7 +1525,7 @@ export function Game(props: GameProps) {
             intensity={getConfig('hemiIntensity')}
           />
 
-          <DungeonScene {...props} inputRef={inputRef} minimapBridgeRef={minimapBridgeRef} />
+          <DungeonScene {...props} inputRef={inputRef} />
 
           <EffectComposer>
             <Bloom
@@ -1539,7 +1537,6 @@ export function Game(props: GameProps) {
           </EffectComposer>
         </Suspense>
       </Canvas>
-      <Minimap bridge={minimapBridgeRef} active={props.gameState.status === 'PLAYING'} />
     </div>
   );
 }

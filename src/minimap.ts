@@ -21,6 +21,10 @@ export interface MinimapChest {
   opened: boolean;
 }
 
+export interface MinimapStairs {
+  pos: Position3D;
+}
+
 /**
  * Mutable bag the game loop writes and the overlay reads.
  * Fields are replaced in place so publishing never triggers a React render.
@@ -34,6 +38,7 @@ export interface MinimapBridge {
   playerYaw: number;
   enemies: readonly MinimapEnemy[];
   chests: readonly MinimapChest[];
+  stairs: MinimapStairs | null;
   /** Increments when the floor layout is replaced so fog-of-war resets. */
   floorSerial: number;
 }
@@ -48,6 +53,7 @@ export function createMinimapBridge(): MinimapBridge {
     playerYaw: 0,
     enemies: [],
     chests: [],
+    stairs: null,
     floorSerial: 0,
   };
 }
@@ -61,6 +67,7 @@ export interface MinimapSample {
   playerYaw: number;
   enemies: readonly MinimapEnemy[];
   chests: readonly MinimapChest[];
+  stairs: MinimapStairs | null;
 }
 
 /** Copy the latest sample into the bridge. A new tile grid bumps `floorSerial`. */
@@ -76,6 +83,7 @@ export function syncMinimapBridge(bridge: MinimapBridge, sample: MinimapSample):
   bridge.playerYaw = sample.playerYaw;
   bridge.enemies = sample.enemies;
   bridge.chests = sample.chests;
+  bridge.stairs = sample.stairs;
 }
 
 export function createVisitedMask(gridSize: number): Uint8Array {
@@ -190,7 +198,7 @@ export function revealVisited(
   return changed;
 }
 
-export type MinimapMarkerKind = 'chest' | 'enemy' | 'boss';
+export type MinimapMarkerKind = 'chest' | 'enemy' | 'boss' | 'stairs';
 
 export interface MinimapMarker {
   kind: MinimapMarkerKind;
@@ -199,12 +207,17 @@ export interface MinimapMarker {
   opened?: boolean;
 }
 
-/** Chests and living enemies whose tile has been visited. Dead enemies are omitted. */
+/**
+ * Chests, living enemies, and stairs whose tile has been visited.
+ * Stairs show once their room is revealed, because revealing a room marks every floor tile in it.
+ * Dead enemies are omitted.
+ */
 export function visibleMarkers(
   mask: Uint8Array,
   gridSize: number,
   chests: readonly MinimapChest[],
   enemies: readonly MinimapEnemy[],
+  stairs: MinimapStairs | null = null,
   tileSize = MINIMAP_TILE_SIZE,
 ): MinimapMarker[] {
   const markers: MinimapMarker[] = [];
@@ -223,6 +236,14 @@ export function visibleMarkers(
       x: pos.x,
       y: pos.y,
     });
+  }
+  if (stairs) {
+    const pos = worldToTileFloat(stairs.pos[0], stairs.pos[2], gridSize, tileSize);
+    const tx = Math.floor(pos.x);
+    const ty = Math.floor(pos.y);
+    if (isVisited(mask, gridSize, tx, ty)) {
+      markers.push({kind: 'stairs', x: pos.x, y: pos.y});
+    }
   }
   return markers;
 }

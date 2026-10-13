@@ -113,6 +113,25 @@ describe('visibleMarkers', () => {
   const enemy: MinimapEnemy = {pos: [4, 0, -16], hp: 10, isBoss: false};
   const dead: MinimapEnemy = {pos: [4, 0, -16], hp: 0, isBoss: true};
 
+  it('shows stairs only after their room is revealed', () => {
+    const tiles = twoRoomGrid();
+    const mask = createVisitedMask(tiles.length);
+    const rooms = [spawn, combat];
+    // Combat-room center (12, 3) on a 16-wide grid.
+    const stairs = {pos: [16, 0, -20] as [number, number, number]};
+    expect(worldToTile(stairs.pos[0], stairs.pos[2], tiles.length)).toEqual({x: 12, y: 3});
+
+    expect(visibleMarkers(mask, tiles.length, [], [], stairs)).toEqual([]);
+
+    revealVisited(mask, tiles, rooms, spawn.x + 1, spawn.y + 1);
+    expect(visibleMarkers(mask, tiles.length, [], [], stairs)).toEqual([]);
+
+    revealVisited(mask, tiles, rooms, combat.x + 1, combat.y + 1);
+    expect(visibleMarkers(mask, tiles.length, [], [], stairs)).toEqual([
+      {kind: 'stairs', x: 12, y: 3},
+    ]);
+  });
+
   it('shows chests and living enemies only on visited tiles', () => {
     const gridSize = 16;
     // world (4, -16) → tile (floor(4/4 + 8), floor(-16/4 + 8)) = (9, 4)
