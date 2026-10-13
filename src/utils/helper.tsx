@@ -822,12 +822,6 @@ export interface MusicTrack {
   description: string;
 }
 
-declare global {
-  interface Window {
-    PlaygroundSDK: any;
-  }
-}
-
 /**
  * Configuration for a sprite sheet.
  */

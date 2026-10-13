@@ -34,11 +34,7 @@ import {
 import {formatTime, gameAudio} from './utils';
 import BackgroundMusic from './utils/BackgroundMusic';
 import {GameState, MenuOverlay, Overlay, useIsMobile} from './utils/helper';
-import {
-  usePlayground,
-  usePlaygroundGameLifecycle,
-  useRpc,
-} from './utils/usePlayground';
+import {sdk, useGameLifecycle} from './platform/lifecycle';
 
 interface CustomWindow extends Window {
   canHandleBackKey?: boolean;
@@ -84,8 +80,6 @@ const DEFAULT_RING: LootItem = {
 };
 
 export default function App() {
-  const {sdk} = usePlayground();
-  const [exitChat] = useRpc<Record<string, unknown>, void>('ExitChat');
   const isMobile = useIsMobile();
 
   const [gameState, setGameState] = useState<GameState>({
@@ -317,13 +311,11 @@ export default function App() {
     setIsHowToPlayOpen(false);
     setShowFloorSummary(false);
 
-    if (sdk) {
-      sdk.startGame();
-    }
-  }, [sdk]);
+    sdk.startGame();
+  }, []);
 
   // Lifecycle reporting
-  usePlaygroundGameLifecycle(gameState, sdk);
+  useGameLifecycle(gameState, sdk);
 
   // Auto-start check for previews
   const hasAutoplayed = useRef(false);
@@ -374,7 +366,6 @@ export default function App() {
         <Game
           gameState={gameState}
           setGameState={setGameState}
-          exitChat={exitChat}
           gameStateRef={gameStateRef}
           playerStats={playerStats}
           setPlayerStats={setPlayerStats}

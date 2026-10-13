@@ -1,3 +1,4 @@
+import {getConfig as getPlatformConfig} from './platform/config';
 import {MusicTrack} from './utils/helper';
 
 /** Game configuration schema. */
@@ -243,30 +244,21 @@ export const CONFIG = {
   },
 };
 
-// Merge customized config values if present (injected by Playground)
-const {playgroundConfig} = globalThis as {
-  playgroundConfig?: Record<string, unknown>;
-};
-if (playgroundConfig) {
-  for (const [key, value] of Object.entries(playgroundConfig)) {
-    if (key in CONFIG) {
-      Object.assign(CONFIG[key as keyof typeof CONFIG], {value});
-    }
-  }
-}
-
 /** Type helper for reading values in game code. */
 export type ConfigKey = keyof typeof CONFIG;
 
 /**
- * Gets a configuration value by key.
+ * Gets a configuration value by key. User/platform overrides from
+ * src/platform/config (playground_config.json + localStorage 'ad3d.settings')
+ * take precedence over the built-in defaults above.
  * @param key The configuration key.
  * @return The configuration value.
  */
 export function getConfig<K extends ConfigKey>(
   key: K,
 ): (typeof CONFIG)[K]['value'] {
-  return CONFIG[key].value;
+  const override = getPlatformConfig<(typeof CONFIG)[K]['value']>(key);
+  return override ?? CONFIG[key].value;
 }
 
 /** Background music tracks available for the game to use. */
