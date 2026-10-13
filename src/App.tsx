@@ -38,6 +38,7 @@ import BackgroundMusic from './utils/BackgroundMusic';
 import {GameState, MenuOverlay, Overlay, useIsMobile} from './utils/helper';
 import {sdk, useGameLifecycle} from './platform/lifecycle';
 import {getSettings, saveSettings, subscribeSettings} from './platform/settings';
+import {actionForCode} from './platform/keybindings';
 import {SettingsPanel} from './components/SettingsPanel';
 import {FINAL_FLOOR, floorClearScore, isVictory, victoryBonus} from './rules';
 
@@ -192,19 +193,21 @@ export default function App() {
       }
 
       if (gameState.status === 'PLAYING' && !isGameMenuOpen && !isHowToPlayOpen) {
-        if (e.key === 'q' || e.key === '1') {
+        const action = actionForCode(getSettings().keyBindings, e.code);
+        if (action === 'potion') {
           // Drink Potion
           drinkPotion();
-        } else if (e.key === '2' || e.key === 'f') {
+        } else if (action === 'spell') {
           // Cast Fireball Spell
           triggerSpellRef.current = true;
-        } else if (e.key === 'e') {
+        } else if (action === 'interact') {
           // Interact
           triggerInteractRef.current = true;
-        } else if (e.key === 'Shift' || e.key === ' ') {
+        } else if (action === 'dash') {
           // Dash
           triggerDashRef.current = true;
         }
+        // 'item3' (key-3 item ability) has a binding slot but no gameplay yet.
       }
     };
 

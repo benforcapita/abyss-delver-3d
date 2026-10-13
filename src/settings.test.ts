@@ -22,6 +22,7 @@ describe('settings store', () => {
   it('has the agreed defaults', () => {
     expect(S.DEFAULT_SETTINGS).toEqual({
       lookSensitivity: 1.8, enableAutoAimAssist: true, musicVolume: 0.15, sfxVolume: 0.7,
+      keyBindings: S.DEFAULT_SETTINGS.keyBindings,
     });
   });
 
@@ -35,6 +36,7 @@ describe('settings store', () => {
     expect(JSON.parse(store.get(KEY)!)).toMatchObject({lookSensitivity: 2.5, musicVolume: 0.2});
     expect(S.reloadSettings()).toEqual({
       lookSensitivity: 2.5, enableAutoAimAssist: false, musicVolume: 0.2, sfxVolume: 0.9,
+      keyBindings: S.DEFAULT_SETTINGS.keyBindings,
     });
   });
 
@@ -70,6 +72,16 @@ describe('settings store', () => {
     expect(S.normalizeSettings({lookSensitivity: 0.01}).lookSensitivity).toBe(0.5);
     expect(S.normalizeSettings({lookSensitivity: NaN}).lookSensitivity).toBe(1.8);
     expect(S.saveSettings({musicVolume: 3}).musicVolume).toBe(1);
+  });
+
+  it('persists key bindings through the store and tolerates old saves without them', () => {
+    store.set(KEY, JSON.stringify({lookSensitivity: 2}));
+    expect(S.reloadSettings().keyBindings).toEqual(S.DEFAULT_SETTINGS.keyBindings);
+    S.saveSettings({keyBindings: {...S.DEFAULT_SETTINGS.keyBindings, attack: 'KeyF'}});
+    expect(JSON.parse(store.get(KEY)!).keyBindings.attack).toBe('KeyF');
+    expect(S.reloadSettings().keyBindings.attack).toBe('KeyF');
+    store.set(KEY, JSON.stringify({keyBindings: 'garbage'}));
+    expect(S.reloadSettings().keyBindings).toEqual(S.DEFAULT_SETTINGS.keyBindings);
   });
 
   it('notifies subscribers and exposes live values via getConfig', async () => {
