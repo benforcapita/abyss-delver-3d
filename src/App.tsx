@@ -50,7 +50,9 @@ import {
 } from './utils/helper';
 import {sdk, useGameLifecycle} from './platform/lifecycle';
 import {getSettings, saveSettings, subscribeSettings} from './platform/settings';
-import {actionsForCode} from './platform/keybindings';
+import {actionsForCode, type BindableAction} from './platform/keybindings';
+import {markTouchAim} from './softLock';
+import {controlHints} from './controlHints';
 import {SettingsPanel} from './components/SettingsPanel';
 import {FINAL_FLOOR, floorClearScore, isVictory, victoryBonus} from './rules';
 import {loadBest, saveBest, type BestScore} from './bestScore';
@@ -65,6 +67,7 @@ import {
   type OnboardingEvent,
   type OnboardingState,
 } from './onboarding';
+import {useLowHpVignette} from './fx/lowHpVignette';
 
 interface CustomWindow extends Window {
   canHandleBackKey?: boolean;
@@ -139,6 +142,20 @@ export default function App() {
   }, [settings.sfxVolume]);
   const [howToPlaySource, setHowToPlaySource] = useState<'main' | 'game'>('main');
 
+  // Track pointer lock on desktop
+  const [pointerLocked, setPointerLocked] = useState(
+    () => typeof document !== 'undefined' && document.pointerLockElement != null,
+  );
+  useEffect(() => {
+    const handlePointerLockChange = () => {
+      setPointerLocked(document.pointerLockElement != null);
+    };
+    document.addEventListener('pointerlockchange', handlePointerLockChange);
+    return () => {
+      document.removeEventListener('pointerlockchange', handlePointerLockChange);
+    };
+  }, []);
+
   // Player RPG stats
   const [playerStats, setPlayerStats] = useState<PlayerStats>({
     hp: getConfig('playerMaxHp'),
@@ -184,6 +201,26 @@ export default function App() {
     howToOpen: isHowToPlayOpen,
     floorSummaryOpen: showFloorSummary,
   });
+
+  // Live key-hint labels; `settings` is kept fresh via subscribeSettings above.
+  const hints = controlHints(settings.keyBindings);
+
+  const showPointerLockHint =
+    gameState.status === 'PLAYING' &&
+    !isMobile &&
+    !pointerLocked &&
+    !isGameMenuOpen &&
+    !isHowToPlayOpen &&
+    !showFloorSummary;
+
+  const vignetteRef = useRef<HTMLDivElement>(null);
+  useLowHpVignette(
+    vignetteRef,
+    playerStats.hp,
+    playerStats.maxHp,
+    gameState.status === 'PLAYING',
+    paused,
+  );
 
   // Action refs triggered from UI & mobile controls
   const triggerAttackRef = useRef(false);
@@ -266,6 +303,22 @@ export default function App() {
 
   // Keyboard shortcut for Escape -> Toggle Game Menu & 1/2/3 Hotkeys
   useEffect(() => {
+    const dispatchBoundAction = (action: BindableAction) => {
+      if (action === 'potion') {
+        // Drink Potion
+        drinkPotion();
+      } else if (action === 'spell') {
+        // Cast Fireball Spell
+        triggerSpellRef.current = true;
+      } else if (action === 'interact') {
+        // Interact
+        triggerInteractRef.current = true;
+      } else if (action === 'dash') {
+        // Dash
+        triggerDashRef.current = true;
+      }
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (isHowToPlayOpen) {
@@ -278,28 +331,30 @@ export default function App() {
       }
 
       if (gameState.status === 'PLAYING' && !isGameMenuOpen && !isHowToPlayOpen) {
-        // A key can map to two actions (default Space = attack + dash);
-        // attack itself is read from the input snapshot in Game.
+        // Attack itself is read from the input snapshot in Game.
         for (const action of actionsForCode(getSettings().keyBindings, e.code)) {
-          if (action === 'potion') {
-            // Drink Potion
-            drinkPotion();
-          } else if (action === 'spell') {
-            // Cast Fireball Spell
-            triggerSpellRef.current = true;
-          } else if (action === 'interact') {
-            // Interact
-            triggerInteractRef.current = true;
-          } else if (action === 'dash') {
-            // Dash
-            triggerDashRef.current = true;
-          }
+          dispatchBoundAction(action);
+        }
+      }
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      // Pointer-lock click guard (minimal; duplicates #34, drop whichever merges second).
+      if (!document.pointerLockElement) return;
+      if (gameState.status === 'PLAYING' && !isGameMenuOpen && !isHowToPlayOpen) {
+        for (const action of actionsForCode(getSettings().keyBindings, 'Mouse0')) {
+          dispatchBoundAction(action);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('mousedown', handleMouseDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('mousedown', handleMouseDown);
+    };
   }, [gameState.status, isGameMenuOpen, isHowToPlayOpen, playerStats.potions]);
 
   // Potion Drinking Handler
@@ -510,6 +565,13 @@ export default function App() {
           activeEnemiesCountRef={activeEnemiesCountRef}
           floorDataRef={floorDataRef}
           minimapBridgeRef={minimapBridgeRef}
+        />
+
+        <div
+          ref={vignetteRef}
+          className="low-hp-vignette"
+          data-testid="low-hp-vignette"
+          aria-hidden="true"
         />
 
         {/* HUD: Active Gameplay Safe Zones */}
@@ -733,7 +795,11 @@ export default function App() {
                     <div className="text-[10px] font-black">
                       ELIXIR ({playerStats.potions})
                     </div>
-                    <div className="text-[9px] text-red-300">Key: Q / 1</div>
+                    <div
+                      className="text-[9px] text-red-300"
+                      data-testid="elixir-key">
+                      Key: {hints.potion}
+                    </div>
                   </div>
                 </button>
                 </div>
@@ -741,14 +807,40 @@ export default function App() {
 
               {/* Desktop Key Controls Helper */}
               {!isMobile && (
-                <div className="bg-black/60 backdrop-blur border border-zinc-800/80 px-3 py-1.5 rounded-lg text-[10px] text-zinc-400">
-                  <span className="text-amber-400 font-bold">WASD</span> Move ·{' '}
-                  <span className="text-amber-400 font-bold">LMB</span> Slash ·{' '}
-                  <span className="text-sky-400 font-bold">2/F</span> Fireball ·{' '}
-                  <span className="text-emerald-400 font-bold">Space</span> Dash
-                  · <span className="text-yellow-400 font-bold">E</span> Interact
+                <div
+                  data-testid="key-hints"
+                  className="bg-black/60 backdrop-blur border border-zinc-800/80 px-3 py-1.5 rounded-lg text-[10px] text-zinc-400">
+                  <span className="text-amber-400 font-bold">{hints.move}</span>{' '}
+                  Move ·{' '}
+                  <span className="text-amber-400 font-bold">{hints.attack}</span>{' '}
+                  Slash ·{' '}
+                  <span className="text-sky-400 font-bold">{hints.spell}</span>{' '}
+                  Fireball ·{' '}
+                  <span className="text-emerald-400 font-bold">{hints.dash}</span>{' '}
+                  Dash ·{' '}
+                  <span className="text-yellow-400 font-bold">
+                    {hints.interact}
+                  </span>{' '}
+                  Interact
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Pointer Lock Hint */}
+        {showPointerLockHint && (
+          <div
+            data-testid="pointer-lock-hint"
+            className="absolute inset-0 pointer-events-none flex items-center justify-center z-20"
+          >
+            <div className="pointer-events-none bg-black/75 backdrop-blur border border-amber-500/40 px-4 py-2 rounded-xl flex flex-col items-center gap-0.5 shadow-lg text-center">
+              <span className="text-sm md:text-base font-bold tracking-wide text-amber-400">
+                Click to look
+              </span>
+              <span className="text-[10px] md:text-xs text-zinc-400">
+                Esc to release
+              </span>
             </div>
           </div>
         )}
@@ -782,8 +874,14 @@ export default function App() {
           <div className="absolute inset-x-0 bottom-3 px-6 pointer-events-none flex justify-between items-end z-30 hud-safe-controls" data-testid="mobile-controls">
             <VirtualJoystick moveRef={joystickMoveRef} />
             <ActionButtons
-              onAttack={() => (triggerAttackRef.current = true)}
-              onSpell={() => (triggerSpellRef.current = true)}
+              onAttack={() => {
+                markTouchAim();
+                triggerAttackRef.current = true;
+              }}
+              onSpell={() => {
+                markTouchAim();
+                triggerSpellRef.current = true;
+              }}
               onDash={() => (triggerDashRef.current = true)}
               onInteract={() => (triggerInteractRef.current = true)}
               onPotion={drinkPotion}
