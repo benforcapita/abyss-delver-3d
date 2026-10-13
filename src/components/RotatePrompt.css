@@ -1,12 +1,20 @@
 /* AD-14: rotate-device prompt + safe-area insets (CSS only). */
 
-/* Keep the game shell (HUD, joystick, menus) inside the device safe area
-   (notch / home indicator). Requires viewport-fit=cover in index.html. */
-#root .fixed.inset-0.overflow-hidden.touch-none {
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-right: env(safe-area-inset-right, 0px);
+/* Keep the HUD inside the device safe area (notch / home indicator) while the
+   canvas stays full-bleed. Requires viewport-fit=cover in index.html.
+   max() preserves the existing Tailwind p-2 base padding. */
+.hud-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+  padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+  padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
+}
+
+/* Mobile joystick/action-button row (sits outside .hud-safe). Keeps its px-6. */
+.hud-safe-controls {
+  padding-right: max(1.5rem, env(safe-area-inset-right, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
-  padding-left: env(safe-area-inset-left, 0px);
+  padding-left: max(1.5rem, env(safe-area-inset-left, 0px));
 }
 
 .rotate-prompt {

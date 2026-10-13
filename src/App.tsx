@@ -410,7 +410,7 @@ export default function App() {
 
         {/* HUD: Active Gameplay Safe Zones */}
         {gameState.status === 'PLAYING' && (
-          <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-2 md:p-4 z-20">
+          <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-2 md:p-4 z-20 hud-safe">
             {/* Top Bar: Floor, Gold, Score, and Mandatory Game Menu Button */}
             <div className="w-full flex items-start justify-between gap-2">
               {/* Left Badges */}
@@ -640,7 +640,7 @@ export default function App() {
 
         {/* Mobile Virtual Joystick & Action Buttons Overlay */}
         {isMobile && gameState.status === 'PLAYING' && (
-          <div className="absolute inset-x-0 bottom-3 px-6 pointer-events-none flex justify-between items-end z-30">
+          <div className="absolute inset-x-0 bottom-3 px-6 pointer-events-none flex justify-between items-end z-30 hud-safe-controls">
             {/* Left Virtual D-Pad / Touch Mover */}
             <div className="pointer-events-auto relative w-28 h-28 bg-black/60 rounded-full border-2 border-zinc-700/60 flex items-center justify-center touch-none">
               <div className="grid grid-cols-3 gap-1">
