@@ -3,8 +3,13 @@
  * to exactly one KeyboardEvent.code (layout-independent, e.g. "KeyW").
  *
  * Conflict policy: SWAP. Binding a key that another action already uses gives
- * that other action the rebound action's previous key, so every action always
- * keeps exactly one key and no key is bound twice.
+ * that other action the rebound action's previous key. If that previous key is
+ * still in use (the shared Space default), the displaced action gets the first
+ * free fallback key instead. Every action always keeps exactly one key.
+ *
+ * Exception: the default pair Space → attack + dash (today's controls) may
+ * share one key. Binding either to Space while the other is on Space is not a
+ * conflict; rebinding either one away from Space splits them.
  */
 
 export const BINDABLE_ACTIONS = [
@@ -15,7 +20,6 @@ export const BINDABLE_ACTIONS = [
   'attack',
   'potion',
   'spell',
-  'item3',
   'interact',
   'dash',
 ] as const;
@@ -31,7 +35,6 @@ export const ACTION_LABELS: Record<BindableAction, string> = {
   attack: 'Attack',
   potion: 'Potion (slot 1)',
   spell: 'Fireball (slot 2)',
-  item3: 'Item Ability (slot 3)',
   interact: 'Interact',
   dash: 'Dash',
 };
@@ -41,17 +44,26 @@ export const DEFAULT_KEY_BINDINGS: Readonly<KeyBindings> = Object.freeze({
   moveDown: 'KeyS',
   moveLeft: 'KeyA',
   moveRight: 'KeyD',
-  attack: 'Enter',
+  attack: 'Space',
   potion: 'Digit1',
   spell: 'Digit2',
-  item3: 'Digit3',
   interact: 'KeyE',
   dash: 'Space',
 });
 
+/** The one default key allowed to drive two actions at once. */
+export const SHARED_KEY = 'Space';
+const SHARED_ACTIONS: ReadonlySet<BindableAction> = new Set(['attack', 'dash']);
+
+/** True when `a` and `b` may both be bound to `code` (the default Space pair). */
+export function canShare(code: string, a: BindableAction, b: BindableAction): boolean {
+  return code === SHARED_KEY && a !== b && SHARED_ACTIONS.has(a) && SHARED_ACTIONS.has(b);
+}
+
 /**
  * Fixed secondary keys (not rebindable). Arrows always move. The legacy
- * shortcuts Q / F / Shift only fire while no primary binding uses that key.
+ * shortcuts Enter / Q / F / Shift (today's secondary keys) only fire while no
+ * primary binding uses that key.
  */
 export const FIXED_ALIASES: Readonly<Record<string, BindableAction>> = {
   ArrowUp: 'moveUp',
@@ -60,6 +72,7 @@ export const FIXED_ALIASES: Readonly<Record<string, BindableAction>> = {
   ArrowRight: 'moveRight',
 };
 export const LEGACY_ALIASES: Readonly<Record<string, BindableAction>> = {
+  Enter: 'attack',
   KeyQ: 'potion',
   KeyF: 'spell',
   ShiftLeft: 'dash',
@@ -137,66 +150,85 @@ export function normalizeKeyCode(input: unknown): string | null {
 const isBindable = (code: string | null): code is string =>
   code != null && !RESERVED_KEYS.has(code);
 
+/** Keys tried, in order, when a displaced action needs a free key. */
+const FALLBACK_KEYS = [
+  ...new Set([...Object.values(DEFAULT_KEY_BINDINGS), ...Object.keys(LEGACY_ALIASES)]),
+  ...'ZXCVBNMGHJKLPOIUYTR'.split('').map((c) => `Key${c}`),
+  ...'34567890'.split('').map((d) => `Digit${d}`),
+];
+
+/** Can `action` take `code` given the current (partial) bindings? */
+function fits(b: Partial<KeyBindings>, action: BindableAction, code: string): boolean {
+  return BINDABLE_ACTIONS.every(
+    (o) => o === action || b[o] !== code || canShare(code, action, o),
+  );
+}
+
+function firstFree(b: Partial<KeyBindings>, action: BindableAction): string {
+  return FALLBACK_KEYS.find((c) => fits(b, action, c))!;
+}
+
 /**
  * Merge stored (possibly old, partial, or corrupt) bindings with defaults.
- * Invalid entries fall back to the default; duplicates are resolved so the
- * earlier action (in BINDABLE_ACTIONS order) keeps the key and the later one
- * takes its default, or the first free default if that is taken too.
+ * Invalid entries fall back to the default; disallowed duplicates are resolved
+ * so the earlier action (in BINDABLE_ACTIONS order) keeps the key and the later
+ * one takes its default, or the first free fallback if that is taken too. The
+ * Space attack+dash pair is allowed and left as is.
  */
 export function normalizeBindings(raw: unknown): KeyBindings {
   const src: Record<string, unknown> =
     raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-  const out = {} as KeyBindings;
-  const used = new Set<string>();
+  const out: Partial<KeyBindings> = {};
   const pending: BindableAction[] = [];
   for (const a of BINDABLE_ACTIONS) {
     const code = normalizeKeyCode(src[a]);
-    if (isBindable(code) && !used.has(code)) {
-      out[a] = code;
-      used.add(code);
-    } else {
-      pending.push(a);
-    }
+    if (isBindable(code) && fits(out, a, code)) out[a] = code;
+    else pending.push(a);
   }
   for (const a of pending) {
-    let code: string | undefined = DEFAULT_KEY_BINDINGS[a];
-    if (used.has(code)) {
-      code = Object.values(DEFAULT_KEY_BINDINGS).find((c) => !used.has(c));
-    }
-    // There are as many defaults as actions, so a free one always exists.
-    out[a] = code!;
-    used.add(code!);
+    const d = DEFAULT_KEY_BINDINGS[a];
+    out[a] = fits(out, a, d) ? d : firstFree(out, a);
   }
-  return out;
+  return out as KeyBindings;
 }
 
 export type RebindResult =
   | {ok: true; bindings: KeyBindings; swappedWith?: BindableAction}
   | {ok: false; bindings: KeyBindings; reason: 'invalid' | 'reserved'};
 
-/** Bind `key` to `action`, swapping with any action that already uses it. */
+/** Bind `key` to `action`; see the conflict policy at the top of this file. */
 export function rebind(bindings: KeyBindings, action: BindableAction, key: unknown): RebindResult {
   const code = normalizeKeyCode(key);
   if (code == null) return {ok: false, bindings, reason: 'invalid'};
   if (RESERVED_KEYS.has(code)) return {ok: false, bindings, reason: 'reserved'};
   const next = {...bindings};
   const prev = next[action];
-  const other = BINDABLE_ACTIONS.find((a) => a !== action && next[a] === code);
   next[action] = code;
-  if (other) next[other] = prev;
-  return other ? {ok: true, bindings: next, swappedWith: other} : {ok: true, bindings: next};
+  const displaced = BINDABLE_ACTIONS.filter(
+    (o) => o !== action && next[o] === code && !canShare(code, action, o),
+  );
+  for (const o of displaced) {
+    next[o] = fits(next, o, prev) ? prev : firstFree(next, o);
+  }
+  return displaced.length
+    ? {ok: true, bindings: next, swappedWith: displaced[0]}
+    : {ok: true, bindings: next};
 }
 
 export function resetBindings(): KeyBindings {
   return {...DEFAULT_KEY_BINDINGS};
 }
 
-/** Resolve a KeyboardEvent.code to its action, honouring aliases. */
-export function actionForCode(bindings: KeyBindings, code: string): BindableAction | null {
+/**
+ * Resolve a KeyboardEvent.code to its action(s), honouring aliases. Returns
+ * two actions only for the shared Space attack+dash binding.
+ */
+export function actionsForCode(bindings: KeyBindings, code: string): BindableAction[] {
   const normalized = normalizeKeyCode(code) ?? code;
-  const primary = BINDABLE_ACTIONS.find((a) => bindings[a] === normalized);
-  if (primary) return primary;
-  return FIXED_ALIASES[normalized] ?? LEGACY_ALIASES[normalized] ?? null;
+  const primary = BINDABLE_ACTIONS.filter((a) => bindings[a] === normalized);
+  if (primary.length) return primary;
+  const alias = FIXED_ALIASES[normalized] ?? LEGACY_ALIASES[normalized];
+  return alias ? [alias] : [];
 }
 
 /** Human-readable label for a code ("KeyF" → "F", "Digit1" → "1"). */

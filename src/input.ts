@@ -1,5 +1,5 @@
 import {useEffect, useRef, type MutableRefObject, type RefObject} from 'react';
-import {actionForCode, type BindableAction} from './platform/keybindings';
+import {actionsForCode, type BindableAction} from './platform/keybindings';
 import {getSettings} from './platform/settings';
 
 /** Actions that can be triggered by the user. */
@@ -41,8 +41,11 @@ const BOUND_TO_INPUT: Partial<Record<BindableAction, InputAction>> = {
 /** Resolve a key event to an InputAction using the live key bindings. */
 function inputActionFor(event: KeyboardEvent): InputAction | undefined {
   if (event.code === 'Escape' || event.key === 'Escape') return 'cancel';
-  const bound = actionForCode(getSettings().keyBindings, event.code);
-  return bound ? BOUND_TO_INPUT[bound] : undefined;
+  for (const bound of actionsForCode(getSettings().keyBindings, event.code)) {
+    const action = BOUND_TO_INPUT[bound];
+    if (action) return action;
+  }
+  return undefined;
 }
 
 function createEmptyActions(): Record<InputAction, boolean> {

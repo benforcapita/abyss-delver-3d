@@ -2,21 +2,45 @@ import {describe, expect, it} from 'vitest';
 import {
   BINDABLE_ACTIONS,
   DEFAULT_KEY_BINDINGS as D,
-  actionForCode,
+  actionsForCode,
+  canShare,
   keyLabel,
   normalizeBindings,
   normalizeKeyCode,
   rebind,
   resetBindings,
+  type KeyBindings,
 } from './platform/keybindings';
 
-const unique = (b: Record<string, string>) => new Set(Object.values(b)).size === Object.values(b).length;
+/** No key is bound twice, except the allowed Space attack+dash pair. */
+function valid(b: KeyBindings): boolean {
+  return BINDABLE_ACTIONS.every((a) =>
+    BINDABLE_ACTIONS.every((o) => a === o || b[a] !== b[o] || canShare(b[a], a, o)),
+  );
+}
 
 describe('keybindings', () => {
-  it('has unique defaults covering every action, including key-3 slot', () => {
-    expect(Object.keys(D).sort()).toEqual([...BINDABLE_ACTIONS].sort());
-    expect(unique(D)).toBe(true);
-    expect(D).toMatchObject({moveUp: 'KeyW', attack: 'Enter', potion: 'Digit1', spell: 'Digit2', item3: 'Digit3', dash: 'Space'});
+  it('defaults match today\'s controls (Space = attack + dash), no key-3 slot', () => {
+    expect(D).toEqual({
+      moveUp: 'KeyW', moveDown: 'KeyS', moveLeft: 'KeyA', moveRight: 'KeyD',
+      attack: 'Space', potion: 'Digit1', spell: 'Digit2', interact: 'KeyE', dash: 'Space',
+    });
+    expect(BINDABLE_ACTIONS).not.toContain('item3');
+    expect(valid(D)).toBe(true);
+    expect(actionsForCode(D, 'Space')).toEqual(['attack', 'dash']);
+    // Today's secondary keys still work.
+    expect(actionsForCode(D, 'Enter')).toEqual(['attack']);
+    expect(actionsForCode(D, 'KeyQ')).toEqual(['potion']);
+    expect(actionsForCode(D, 'KeyF')).toEqual(['spell']);
+    expect(actionsForCode(D, 'ShiftLeft')).toEqual(['dash']);
+    expect(actionsForCode(D, 'ArrowUp')).toEqual(['moveUp']);
+  });
+
+  it('only the Space attack+dash pair may share', () => {
+    expect(canShare('Space', 'attack', 'dash')).toBe(true);
+    expect(canShare('KeyF', 'attack', 'dash')).toBe(false);
+    expect(canShare('Space', 'attack', 'interact')).toBe(false);
+    expect(canShare('Space', 'attack', 'attack')).toBe(false);
   });
 
   it('normalizes key codes and names regardless of case', () => {
@@ -24,7 +48,6 @@ describe('keybindings', () => {
     expect(normalizeKeyCode('F')).toBe('KeyF');
     expect(normalizeKeyCode('keyf')).toBe('KeyF');
     expect(normalizeKeyCode('KEYF')).toBe('KeyF');
-    expect(normalizeKeyCode('KeyF')).toBe('KeyF');
     expect(normalizeKeyCode('3')).toBe('Digit3');
     expect(normalizeKeyCode('digit3')).toBe('Digit3');
     expect(normalizeKeyCode(' ')).toBe('Space');
@@ -36,20 +59,49 @@ describe('keybindings', () => {
     for (const bad of ['', 'nope', 42, null, undefined, {}]) expect(normalizeKeyCode(bad)).toBeNull();
   });
 
-  it('rebinds to a free key', () => {
+  it('rebinding attack splits the Space pair without touching dash', () => {
     const r = rebind(resetBindings(), 'attack', 'f');
-    expect(r.ok).toBe(true);
-    expect(r.bindings.attack).toBe('KeyF');
+    expect(r).toMatchObject({ok: true, bindings: {...D, attack: 'KeyF'}});
     expect(r.ok && r.swappedWith).toBeUndefined();
-    expect(unique(r.bindings)).toBe(true);
+    expect(actionsForCode(r.bindings, 'Space')).toEqual(['dash']);
+    expect(actionsForCode(r.bindings, 'KeyF')).toEqual(['attack']);
   });
 
-  it('swaps on conflict', () => {
+  it('rebinding dash splits the pair too', () => {
+    const r = rebind(resetBindings(), 'dash', 'ShiftLeft');
+    expect(r.bindings).toEqual({...D, dash: 'ShiftLeft'});
+    expect(r.ok && r.swappedWith).toBeUndefined();
+  });
+
+  it('re-joining the pair on Space is allowed (no swap)', () => {
+    const split = rebind(resetBindings(), 'attack', 'KeyF').bindings;
+    const r = rebind(split, 'attack', 'space');
+    expect(r.bindings).toEqual(D);
+    expect(r.ok && r.swappedWith).toBeUndefined();
+  });
+
+  it('swaps on an ordinary conflict', () => {
+    const r = rebind(resetBindings(), 'potion', 'KeyE');
+    expect(r).toMatchObject({ok: true, swappedWith: 'interact'});
+    expect(r.bindings).toEqual({...D, potion: 'KeyE', interact: 'Digit1'});
+  });
+
+  it('a displaced action does not inherit the still-shared Space', () => {
     const r = rebind(resetBindings(), 'attack', 'KeyE');
     expect(r).toMatchObject({ok: true, swappedWith: 'interact'});
     expect(r.bindings.attack).toBe('KeyE');
-    expect(r.bindings.interact).toBe('Enter');
-    expect(unique(r.bindings)).toBe(true);
+    expect(r.bindings.dash).toBe('Space');
+    expect(r.bindings.interact).not.toBe('Space');
+    expect(r.bindings.interact).toBe('Enter'); // first free fallback key
+    expect(valid(r.bindings)).toBe(true);
+  });
+
+  it('binding a third action to Space displaces both pair members', () => {
+    const r = rebind(resetBindings(), 'interact', 'Space');
+    expect(r.bindings.interact).toBe('Space');
+    expect(r.bindings.attack).toBe('KeyE');
+    expect(r.bindings.dash).not.toBe('Space');
+    expect(valid(r.bindings)).toBe(true);
   });
 
   it('rejects reserved and invalid keys without changes', () => {
@@ -64,31 +116,33 @@ describe('keybindings', () => {
     expect(b).toEqual(D);
     const r = resetBindings();
     r.attack = 'KeyZ';
-    expect(D.attack).toBe('Enter');
+    expect(D.attack).toBe('Space');
     expect(resetBindings()).toEqual(D);
   });
 
-  it('tolerates corrupt or old data', () => {
+  it('tolerates corrupt or old data, keeping the shared default pair', () => {
     for (const raw of [undefined, null, 'x', 7, [], {}]) expect(normalizeBindings(raw)).toEqual(D);
-    const partial = normalizeBindings({attack: 'f', bogus: 'KeyZ', spell: 123, dash: 'Escape'});
-    expect(partial).toEqual({...D, attack: 'KeyF'});
+    expect(normalizeBindings({attack: 'f', bogus: 'KeyZ', spell: 123, dash: 'Escape', item3: 'Digit3'}))
+      .toEqual({...D, attack: 'KeyF'});
+    expect(normalizeBindings({attack: 'Space', dash: 'Space'})).toEqual(D);
   });
 
-  it('resolves duplicates in stored data to unique keys', () => {
+  it('resolves disallowed duplicates in stored data', () => {
     const b = normalizeBindings({moveUp: 'KeyE', interact: 'KeyE'});
     expect(b.moveUp).toBe('KeyE');
-    expect(unique(b)).toBe(true);
-    expect(Object.keys(b).sort()).toEqual([...BINDABLE_ACTIONS].sort());
+    expect(b.interact).not.toBe('KeyE');
+    expect(valid(b)).toBe(true);
+    const s = normalizeBindings({attack: 'Space', interact: 'Space'});
+    expect(s.attack).toBe('Space');
+    expect(s.dash).toBe('Space');
+    expect(s.interact).not.toBe('Space');
+    expect(valid(s)).toBe(true);
   });
 
-  it('looks up actions live with arrows and legacy aliases', () => {
+  it('primary bindings take priority over legacy aliases', () => {
     const b = rebind(resetBindings(), 'attack', 'KeyF').bindings;
-    expect(actionForCode(b, 'KeyF')).toBe('attack'); // primary beats legacy F=spell
-    expect(actionForCode(b, 'Enter')).toBeNull();
-    expect(actionForCode(b, 'ArrowUp')).toBe('moveUp');
-    expect(actionForCode(b, 'KeyQ')).toBe('potion');
-    expect(actionForCode(resetBindings(), 'KeyF')).toBe('spell');
-    expect(actionForCode(b, 'KeyZ')).toBeNull();
+    expect(actionsForCode(b, 'KeyF')).toEqual(['attack']);
+    expect(actionsForCode(b, 'KeyZ')).toEqual([]);
   });
 
   it('labels keys for display', () => {
