@@ -21,7 +21,7 @@ beforeEach(() => {
 describe('settings store', () => {
   it('has the agreed defaults', () => {
     expect(S.DEFAULT_SETTINGS).toEqual({
-      lookSensitivity: 1.8, enableAutoAimAssist: true, musicVolume: 0.15, sfxVolume: 0.7, screenShake: true,
+      lookSensitivity: 1.8, touchLookSensitivity: 1.8, enableAutoAimAssist: true, musicVolume: 0.15, sfxVolume: 0.7, touchSoftLock: true, screenShake: true,
       keyBindings: S.DEFAULT_SETTINGS.keyBindings,
     });
   });
@@ -32,10 +32,10 @@ describe('settings store', () => {
   });
 
   it('saves and loads round-trip', () => {
-    S.saveSettings({lookSensitivity: 2.5, enableAutoAimAssist: false, musicVolume: 0.2, sfxVolume: 0.9});
+    S.saveSettings({lookSensitivity: 2.5, touchLookSensitivity: 2.5, enableAutoAimAssist: false, musicVolume: 0.2, sfxVolume: 0.9});
     expect(JSON.parse(store.get(KEY)!)).toMatchObject({lookSensitivity: 2.5, musicVolume: 0.2});
     expect(S.reloadSettings()).toEqual({
-      lookSensitivity: 2.5, enableAutoAimAssist: false, musicVolume: 0.2, sfxVolume: 0.9, screenShake: true,
+      lookSensitivity: 2.5, touchLookSensitivity: 2.5, enableAutoAimAssist: false, musicVolume: 0.2, sfxVolume: 0.9, touchSoftLock: true, screenShake: true,
       keyBindings: S.DEFAULT_SETTINGS.keyBindings,
     });
   });
@@ -52,7 +52,7 @@ describe('settings store', () => {
 
   it('merges partial data with defaults and ignores wrong types', () => {
     store.set(KEY, JSON.stringify({lookSensitivity: 3, enableAutoAimAssist: 'yes', sfxVolume: 'loud'}));
-    expect(S.loadSettings()).toEqual({...S.DEFAULT_SETTINGS, lookSensitivity: 3});
+    expect(S.loadSettings()).toEqual({...S.DEFAULT_SETTINGS, lookSensitivity: 3, touchLookSensitivity: 3});
   });
 
   it('loads old saves (config keys, extra keys) and preserves extra keys on save', () => {
@@ -67,7 +67,7 @@ describe('settings store', () => {
 
   it('clamps out-of-range and non-finite values', () => {
     expect(S.normalizeSettings({lookSensitivity: 99, musicVolume: -1, sfxVolume: 5})).toEqual({
-      ...S.DEFAULT_SETTINGS, lookSensitivity: 4, musicVolume: 0, sfxVolume: 1,
+      ...S.DEFAULT_SETTINGS, lookSensitivity: 4, touchLookSensitivity: 4, musicVolume: 0, sfxVolume: 1,
     });
     expect(S.normalizeSettings({lookSensitivity: 0.01}).lookSensitivity).toBe(0.5);
     expect(S.normalizeSettings({lookSensitivity: NaN}).lookSensitivity).toBe(1.8);
@@ -82,6 +82,21 @@ describe('settings store', () => {
     expect(S.reloadSettings().keyBindings.attack).toBe('KeyF');
     store.set(KEY, JSON.stringify({keyBindings: 'garbage'}));
     expect(S.reloadSettings().keyBindings).toEqual(S.DEFAULT_SETTINGS.keyBindings);
+  });
+
+  it('touch look sensitivity: default, independent save, legacy inherit, clamping', () => {
+    expect(S.DEFAULT_SETTINGS.touchLookSensitivity).toBe(S.DEFAULT_SETTINGS.lookSensitivity);
+    S.saveSettings({touchLookSensitivity: 3.1});
+    expect(S.getTouchLookSensitivity()).toBe(3.1);
+    expect(S.getSettings().lookSensitivity).toBe(1.8);
+    expect(S.reloadSettings().touchLookSensitivity).toBe(3.1);
+    S.saveSettings({lookSensitivity: 0.9});
+    expect(S.getTouchLookSensitivity()).toBe(3.1);
+    // Old save without the field: touch keeps following the old mouse value.
+    store.set(KEY, JSON.stringify({lookSensitivity: 2.2}));
+    expect(S.reloadSettings().touchLookSensitivity).toBe(2.2);
+    expect(S.normalizeSettings({touchLookSensitivity: 99}).touchLookSensitivity).toBe(4);
+    expect(S.normalizeSettings({touchLookSensitivity: 'x'}).touchLookSensitivity).toBe(1.8);
   });
 
   it('migrates legacy Space attack+dash saves to Mouse0 attack', () => {

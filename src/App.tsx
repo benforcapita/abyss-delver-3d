@@ -52,6 +52,7 @@ import {
 import {sdk, useGameLifecycle} from './platform/lifecycle';
 import {getSettings, saveSettings, subscribeSettings} from './platform/settings';
 import {actionsForCode, type BindableAction} from './platform/keybindings';
+import {markTouchAim} from './softLock';
 import {controlHints} from './controlHints';
 import {SettingsPanel} from './components/SettingsPanel';
 import {FINAL_FLOOR, floorClearScore, isVictory, victoryBonus} from './rules';
@@ -785,8 +786,14 @@ export default function App() {
             <TouchLookZone deltaRef={touchLookDeltaRef} />
             <VirtualJoystick moveRef={joystickMoveRef} />
             <ActionButtons
-              onAttack={() => (triggerAttackRef.current = true)}
-              onSpell={() => (triggerSpellRef.current = true)}
+              onAttack={() => {
+                markTouchAim();
+                triggerAttackRef.current = true;
+              }}
+              onSpell={() => {
+                markTouchAim();
+                triggerSpellRef.current = true;
+              }}
               onDash={() => (triggerDashRef.current = true)}
               onInteract={() => (triggerInteractRef.current = true)}
               onPotion={drinkPotion}

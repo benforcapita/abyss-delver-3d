@@ -112,6 +112,14 @@ export function SettingsPanel({settings, onChange, onClose}: SettingsPanelProps)
         display={settings.lookSensitivity.toFixed(1)}
         onChange={(v) => onChange({lookSensitivity: v})}
       />
+      <Slider
+        id="setting-touch-sensitivity"
+        label="Touch Look Sensitivity"
+        value={settings.touchLookSensitivity}
+        {...L.touchLookSensitivity}
+        display={settings.touchLookSensitivity.toFixed(1)}
+        onChange={(v) => onChange({touchLookSensitivity: v})}
+      />
       <label className="flex justify-between items-center text-xs font-bold text-zinc-300">
         <span>Aim Assist</span>
         <input
@@ -119,6 +127,16 @@ export function SettingsPanel({settings, onChange, onClose}: SettingsPanelProps)
           data-testid="setting-aim-assist"
           checked={settings.enableAutoAimAssist}
           onChange={(e) => onChange({enableAutoAimAssist: e.target.checked})}
+          className="w-5 h-5 accent-amber-500"
+        />
+      </label>
+      <label className="flex justify-between items-center text-xs font-bold text-zinc-300">
+        <span>Touch Auto-Aim (soft lock)</span>
+        <input
+          type="checkbox"
+          data-testid="setting-touch-soft-lock"
+          checked={settings.touchSoftLock}
+          onChange={(e) => onChange({touchSoftLock: e.target.checked})}
           className="w-5 h-5 accent-amber-500"
         />
       </label>
