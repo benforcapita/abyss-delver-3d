@@ -8,53 +8,35 @@ import {
 } from './platform/keybindings';
 
 describe('controlHints', () => {
-  it('matches the old hard-coded labels under default bindings', () => {
+  it('shows only primary keys under default bindings', () => {
     expect(controlHints({...D})).toEqual({
       move: 'WASD',
       attack: 'LMB',
-      spell: '2/F',
-      dash: 'Space/Shift',
+      spell: '2',
+      dash: 'Space',
       interact: 'E',
-      potion: '1/Q',
+      potion: '1',
     });
   });
 
-  it('shows the rebound dash key; Shift stays a live dash alias', () => {
+  it('shows the rebound dash key only; Shift alias still works but is hidden', () => {
     const b = rebind(resetBindings(), 'dash', 'KeyK').bindings;
-    // Nothing claims ShiftLeft, so the legacy alias still triggers dash.
     expect(actionsForCode(b, 'ShiftLeft')).toEqual(['dash']);
-    expect(controlHints(b).dash).toBe('K/Shift');
+    expect(controlHints(b).dash).toBe('K');
   });
 
-  it('shows just the Shift label when dash is bound to Shift itself', () => {
-    const b = rebind(resetBindings(), 'dash', 'ShiftLeft').bindings;
-    expect(controlHints(b).dash).toBe('Shift Left');
-  });
-
-  it('drops /Shift once another action claims ShiftLeft', () => {
-    const b = rebind(resetBindings(), 'potion', 'ShiftLeft').bindings;
-    expect(actionsForCode(b, 'ShiftLeft')).toEqual(['potion']);
-    expect(controlHints(b).dash).toBe('Space');
-  });
-
-  it('shows F without a redundant /F when spell is rebound to KeyF', () => {
-    const b = rebind(resetBindings(), 'spell', 'KeyF').bindings;
-    // F still casts the spell, now as the primary binding.
+  it('never displays the F / Q aliases even while they still fire', () => {
+    const b = resetBindings();
     expect(actionsForCode(b, 'KeyF')).toEqual(['spell']);
-    expect(controlHints(b).spell).toBe('F');
+    expect(actionsForCode(b, 'KeyQ')).toEqual(['potion']);
+    const h = controlHints(b);
+    expect(h.spell).not.toMatch(/F/);
+    expect(h.potion).not.toMatch(/Q/);
   });
 
-  it('drops /F once another action claims KeyF', () => {
-    const b = rebind(resetBindings(), 'attack', 'KeyF').bindings;
-    expect(actionsForCode(b, 'KeyF')).toEqual(['attack']);
-    expect(controlHints(b).spell).toBe('2');
-  });
-
-  it('keeps /Q while the potion alias is free and drops it when claimed', () => {
-    const moved = rebind(resetBindings(), 'potion', 'Digit5').bindings;
-    expect(controlHints(moved).potion).toBe('5/Q');
-    const claimed = rebind(resetBindings(), 'attack', 'KeyQ').bindings;
-    expect(controlHints(claimed).potion).toBe('1');
+  it('elixir label follows the primary potion key', () => {
+    expect(controlHints(rebind(resetBindings(), 'potion', 'Digit5').bindings).potion).toBe('5');
+    expect(controlHints(rebind(resetBindings(), 'potion', 'KeyQ').bindings).potion).toBe('Q');
   });
 
   it('reflects rebound movement keys in order W-up, A-left, S-down, D-right', () => {
