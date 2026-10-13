@@ -55,6 +55,7 @@ import {SettingsPanel} from './components/SettingsPanel';
 import {FINAL_FLOOR, floorClearScore, isVictory, victoryBonus} from './rules';
 import {loadBest, saveBest, type BestScore} from './bestScore';
 import {isGamePaused} from './pause';
+import {useLowHpVignette} from './fx/lowHpVignette';
 
 interface CustomWindow extends Window {
   canHandleBackKey?: boolean;
@@ -174,6 +175,15 @@ export default function App() {
     howToOpen: isHowToPlayOpen,
     floorSummaryOpen: showFloorSummary,
   });
+
+  const vignetteRef = useRef<HTMLDivElement>(null);
+  useLowHpVignette(
+    vignetteRef,
+    playerStats.hp,
+    playerStats.maxHp,
+    gameState.status === 'PLAYING',
+    paused,
+  );
 
   // Action refs triggered from UI & mobile controls
   const triggerAttackRef = useRef(false);
@@ -484,6 +494,13 @@ export default function App() {
           activeEnemiesCountRef={activeEnemiesCountRef}
           floorDataRef={floorDataRef}
           minimapBridgeRef={minimapBridgeRef}
+        />
+
+        <div
+          ref={vignetteRef}
+          className="low-hp-vignette"
+          data-testid="low-hp-vignette"
+          aria-hidden="true"
         />
 
         {/* HUD: Active Gameplay Safe Zones */}
