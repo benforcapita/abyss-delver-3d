@@ -218,7 +218,7 @@ export const CONFIG = {
 
   // --- Audio ---
   defaultMusicVolume: {
-    value: 0.45,
+    value: 0.15,
     type: 'number',
     label: 'Default Music Volume',
     group: 'AUDIO',
