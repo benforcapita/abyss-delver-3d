@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Abyss Delver 3D</title>
+    <script>
+      // Standalone (non-iframe) runs: the real Playground SDK requires an iframe
+      // host, so opt into the existing fake SDK path in src/utils/usePlayground.ts.
+      // Inside the Playground iframe the real SDK is still loaded as before.
+      if (window.self === window.top) window.__PLAYGROUND_PREVIEW__ = true;
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>

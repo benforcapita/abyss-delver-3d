@@ -81,7 +81,7 @@ function getPointerNDC(
  * @param options — configuration options (enabled: disable input when game is paused / in menus)
  */
 export function useInput(
-  containerRef: RefObject<HTMLDivElement>,
+  containerRef: RefObject<HTMLDivElement | null>,
   options: {enabled?: boolean} = {},
 ): MutableRefObject<InputSnapshot> {
   const {enabled = true} = options;
