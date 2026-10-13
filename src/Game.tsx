@@ -5,6 +5,15 @@ import {Bloom, EffectComposer} from '@react-three/postprocessing';
 import type {MutableRefObject} from 'react';
 import React, {Suspense, useEffect, useMemo, useRef, useState} from 'react';
 import * as THREE from 'three';
+import {
+  advanceTelegraph,
+  BOSS_TELEGRAPH_WINDUP,
+  isInsideRing,
+  meleeHitLands,
+  startTelegraph,
+  usesGroundTelegraph,
+} from './bossTelegraph';
+import {BossTelegraph} from './components/BossTelegraph';
 import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
 import {FloatingTextStore} from './floatingText';
 import {FloatingTextSprite} from './components/FloatingTextSprite';
@@ -860,6 +869,11 @@ function DungeonScene({
       );
       enemy.rotY = angleToPlayer;
 
+      // Clear a boss telegraph if the enemy was knocked out of windup (e.g. hurt)
+      if (enemy.telegraph && enemy.state !== 'windup') {
+        enemy.telegraph = undefined;
+      }
+
       // Enemy AI States
       if (distToPlayer < 20.0) {
         if (enemy.state === 'idle') {
@@ -874,15 +888,30 @@ function DungeonScene({
             enemy.pos[2] += Math.cos(angleToPlayer) * speed;
           } else {
             enemy.state = 'windup';
-            enemy.stateTimer = 0.5;
-            enemy.telegraphTimer = 0.5;
+            const groundTelegraph = usesGroundTelegraph(
+              enemy.isBoss,
+              enemy.archetype,
+            );
+            enemy.stateTimer = groundTelegraph ? BOSS_TELEGRAPH_WINDUP : 0.5;
+            enemy.telegraphTimer = enemy.stateTimer;
+            if (groundTelegraph) {
+              // Telegraph locks onto the player's current position
+              enemy.telegraph = startTelegraph(pPos.x, pPos.z);
+            }
           }
         } else if (enemy.state === 'windup') {
-          enemy.stateTimer -= dt;
-          enemy.telegraphTimer = enemy.stateTimer;
-          if (enemy.stateTimer <= 0) {
+          if (!paused) {
+            enemy.stateTimer -= dt;
+            enemy.telegraphTimer = enemy.stateTimer;
+          }
+          if (enemy.telegraph) {
+            enemy.telegraph = advanceTelegraph(enemy.telegraph, dt, paused);
+          }
+          if (!paused && enemy.stateTimer <= 0) {
             enemy.state = 'attack';
             enemy.stateTimer = 0.3;
+            const tel = enemy.telegraph;
+            enemy.telegraph = undefined;
 
             // Execute attack
             if (enemy.archetype === 'cultist' || enemy.archetype === 'boss_crimson_archmage') {
@@ -911,7 +940,10 @@ function DungeonScene({
               setProjectiles((prev) => [...prev, enemyProj]);
             } else {
               // Melee Strike
-              if (distToPlayer <= enemy.attackRange + 1.0) {
+              const insideRing = tel
+                ? isInsideRing(pPos.x, pPos.z, tel.cx, tel.cz, tel.radius)
+                : true;
+              if (meleeHitLands(distToPlayer <= enemy.attackRange + 1.0, insideRing)) {
                 applyPlayerDamage(enemy.attackPower, enemy.name);
                 gameAudio.playMeleePunch();
               }
@@ -1492,6 +1524,16 @@ function DungeonScene({
           </group>
         );
       })}
+
+      {/* Boss Attack Telegraphs (world-space, locked at windup start) */}
+      {enemies.map(
+        (enemy) =>
+          enemy.hp > 0 &&
+          enemy.isBoss &&
+          enemy.telegraph && (
+            <BossTelegraph key={`tel_${enemy.id}`} telegraph={enemy.telegraph} />
+          ),
+      )}
 
       {/* Projectiles */}
       {projectiles.map((proj) => (
