@@ -223,7 +223,7 @@ export function createSeamlessLoopBuffer(
 }
 
 /**
- * Standalone background music player for HTML5 games in Google Playground.
+ * Standalone background music player for HTML5 games.
  *
  * Uses native Web Audio API sample-accurate looping (AudioBufferSourceNode.loop)
  * to deliver seamless, gap-free playback without audio cutouts or JS timer drift.
@@ -249,28 +249,11 @@ export function BackgroundMusic({
   const [useFallback, setUseFallback] = useState(false);
   const useFallbackRef = useRef(false);
   const [fallbackFailed, setFallbackFailed] = useState(false);
-  const [platformMuted, setPlatformMuted] = useState(false);
-
-  const effectiveMuted = isMuted || platformMuted;
 
   // Sync latest playing state ref
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
-
-  // Synchronize with Playground platform mute events
-  useEffect(() => {
-    const handlePlatformMute = (e: Event) => {
-      const customEvent = e as CustomEvent<{muted: boolean}>;
-      if (typeof customEvent.detail?.muted === 'boolean') {
-        setPlatformMuted(customEvent.detail.muted);
-      }
-    };
-    window.addEventListener('playground-mute', handlePlatformMute);
-    return () => {
-      window.removeEventListener('playground-mute', handlePlatformMute);
-    };
-  }, []);
 
   // Initialize AudioContext and Master Gain
   const getOrCreateContext = (): AudioContext | null => {
@@ -291,7 +274,7 @@ export function BackgroundMusic({
     try {
       const ctx = new AudioContextClass();
       const masterGain = ctx.createGain();
-      const targetGain = effectiveMuted ? 0 : Math.max(0, Math.min(1, volume));
+      const targetGain = isMuted ? 0 : Math.max(0, Math.min(1, volume));
       masterGain.gain.setValueAtTime(targetGain, ctx.currentTime);
       masterGain.connect(ctx.destination);
 
@@ -543,11 +526,11 @@ export function BackgroundMusic({
 
   // Handle Volume & Mute with de-zippering
   useEffect(() => {
-    const targetGain = effectiveMuted ? 0 : Math.max(0, Math.min(1, volume));
+    const targetGain = isMuted ? 0 : Math.max(0, Math.min(1, volume));
 
     if (useFallback) {
       if (fallbackAudioRef.current) {
-        fallbackAudioRef.current.muted = effectiveMuted;
+        fallbackAudioRef.current.muted = isMuted;
         fallbackAudioRef.current.volume = targetGain;
       }
       return;
@@ -562,7 +545,7 @@ export function BackgroundMusic({
         VOLUME_TIME_CONSTANT_SEC,
       );
     }
-  }, [effectiveMuted, volume, useFallback]);
+  }, [isMuted, volume, useFallback]);
 
   // Cleanup on component unmount
   useEffect(() => {
