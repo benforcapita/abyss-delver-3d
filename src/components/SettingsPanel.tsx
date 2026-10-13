@@ -108,6 +108,16 @@ export function SettingsPanel({settings, onChange, onClose}: SettingsPanelProps)
         />
       </label>
       <label className="flex justify-between items-center text-xs font-bold text-zinc-300">
+        <span>Touch Auto-Aim (soft lock)</span>
+        <input
+          type="checkbox"
+          data-testid="setting-touch-soft-lock"
+          checked={settings.touchSoftLock}
+          onChange={(e) => onChange({touchSoftLock: e.target.checked})}
+          className="w-5 h-5 accent-amber-500"
+        />
+      </label>
+      <label className="flex justify-between items-center text-xs font-bold text-zinc-300">
         <span>
           Screen Shake
           {prefersReducedMotion() ? (
