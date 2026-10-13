@@ -22,13 +22,15 @@ import {
   VolumeX,
   Zap,
 } from 'lucide-react';
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {AVAILABLE_MUSIC_TRACKS, getConfig} from './constants';
 import {ActionButtons} from './components/ActionButtons';
 import {VirtualJoystick} from './components/VirtualJoystick';
 import {Game} from './Game';
+import {DebugPanel} from './components/DebugPanel';
 import {Minimap} from './components/Minimap';
 import {RotatePrompt} from './components/RotatePrompt';
+import {isDebugEnabled} from './debug';
 import {createMinimapBridge} from './minimap';
 import {
   DungeonFloorData,
@@ -99,6 +101,10 @@ const DEFAULT_RING: LootItem = {
 
 export default function App() {
   const isMobile = useIsMobile();
+  const debugEnabled = useMemo(
+    () => isDebugEnabled(window.location.search, import.meta.env.DEV),
+    [],
+  );
 
   const [gameState, setGameState] = useState<GameState>({
     status: 'START',
@@ -974,6 +980,16 @@ export default function App() {
           tone="danger">
           <BestScoreLine best={best} className="mb-6" />
         </Overlay>
+      )}
+
+      {debugEnabled && gameState.status === 'PLAYING' && (
+        <DebugPanel
+          onSkipFloor={() => {
+            if (gameState.level < FINAL_FLOOR) {
+              advanceToNextFloor();
+            }
+          }}
+        />
       )}
     </div>
   );

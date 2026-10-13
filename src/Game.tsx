@@ -14,6 +14,7 @@ import {createOneShotLatch} from './floorLatch';
 import {InputSnapshot, useInput} from './input';
 import {syncMinimapBridge, type MinimapBridge} from './minimap';
 import {enemyKillScore, isGameOver} from './rules';
+import {applyDamage, debugCheats} from './debug';
 import {
   ChestEntity,
   DungeonFloorData,
@@ -630,6 +631,16 @@ function DungeonScene({
     const dt = frameDelta(delta, wasPausedRef.current);
     wasPausedRef.current = false;
 
+    if (debugCheats.killBossRequested) {
+      debugCheats.killBossRequested = false;
+      const boss = enemiesRef.current.find((e) => e.isBoss && e.hp > 0);
+      if (boss) {
+        boss.hp = 0;
+        handleEnemyDefeated(boss);
+        setEnemies([...enemiesRef.current]);
+      }
+    }
+
     // Handle touch look delta from mobile
     if (touchLookDeltaRef.current.dx !== 0 || touchLookDeltaRef.current.dy !== 0) {
       const sens = getConfig('lookSensitivity') * 0.0035;
@@ -1025,7 +1036,7 @@ function DungeonScene({
     screenShake.current = 0.35;
 
     setPlayerStats((prev) => {
-      const newHp = Math.max(0, prev.hp - finalDmg);
+      const newHp = applyDamage(prev.hp, finalDmg, debugCheats.godMode);
       if (isGameOver(newHp) && !gameOverLatchedRef.current) {
         gameOverLatchedRef.current = true;
         setGameState((g) => ({...g, status: 'GAME_OVER'}));
