@@ -49,6 +49,7 @@ import {
 import {gameAudio} from './utils';
 import {GameState} from './utils/helper';
 import {frameDelta} from './pause';
+import {nearChestOrShrine} from './controls/interactRange';
 
 interface GameProps {
   paused: boolean;
@@ -66,6 +67,8 @@ interface GameProps {
   triggerInteractRef: MutableRefObject<boolean>;
   joystickMoveRef: MutableRefObject<{x: number; y: number}>;
   touchLookDeltaRef: MutableRefObject<{dx: number; dy: number}>;
+  /** Set each frame when a chest or shrine is within interact range. */
+  interactAvailableRef?: MutableRefObject<boolean>;
   currentBossRef: MutableRefObject<EnemyEntity | null>;
   activeEnemiesCountRef: MutableRefObject<number>;
   floorDataRef: MutableRefObject<DungeonFloorData | null>;
@@ -183,6 +186,7 @@ function DungeonScene({
   triggerInteractRef,
   joystickMoveRef,
   touchLookDeltaRef,
+  interactAvailableRef,
   currentBossRef,
   activeEnemiesCountRef,
   floorDataRef,
@@ -828,6 +832,15 @@ function DungeonScene({
         gameAudio.playFootstepStone();
         lastFootstepDist.current = 0;
       }
+    }
+
+    if (interactAvailableRef) {
+      interactAvailableRef.current = nearChestOrShrine(
+        pPos.x,
+        pPos.z,
+        chestsRef.current,
+        shrinesRef.current,
+      );
     }
 
     // Camera Positioning & Orientation
