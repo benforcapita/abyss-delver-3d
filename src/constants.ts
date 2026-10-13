@@ -215,6 +215,12 @@ export const CONFIG = {
     label: 'Auto-Aim Assist',
     group: 'Controls',
   },
+  screenShake: {
+    value: true,
+    type: 'boolean',
+    label: 'Screen Shake',
+    group: 'Visuals',
+  },
 
   // --- Audio ---
   defaultMusicVolume: {

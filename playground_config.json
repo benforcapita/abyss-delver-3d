@@ -61,6 +61,12 @@
       "default": true
     },
     {
+      "name": "screenShake",
+      "type": "boolean",
+      "label": "Screen Shake",
+      "default": true
+    },
+    {
       "name": "defaultMusicVolume",
       "type": "number",
       "label": "Default Music Volume",
@@ -78,6 +84,7 @@
     "spellDamage": 45,
     "lookSensitivity": 1.8,
     "enableAutoAimAssist": true,
+    "screenShake": true,
     "defaultMusicVolume": 0.15
   }
 }

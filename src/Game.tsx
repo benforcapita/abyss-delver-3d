@@ -15,6 +15,15 @@ import {
 } from './bossTelegraph';
 import {BossTelegraph} from './components/BossTelegraph';
 import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
+import {applyCameraLocalPose, createFlashMap, holdHitFlashes, PLAYER_FLASH_ID, syncHitFlashes, triggerHitFlash} from './fx/hitFlash';
+import {
+  createShakeState,
+  isScreenShakeEnabled,
+  outgoingShakeAmount,
+  playerHurtShake,
+  stepScreenShake,
+  triggerScreenShake,
+} from './fx/screenShake';
 import {FloatingTextStore} from './floatingText';
 import {FloatingTextSprite} from './components/FloatingTextSprite';
 import {roomClearChests} from './drops';
@@ -230,7 +239,11 @@ function DungeonScene({
   const dashTimer = useRef(0);
   const isDashing = useRef(false);
   const dashDir = useRef<THREE.Vector3>(new THREE.Vector3());
-  const screenShake = useRef(0);
+  const screenShake = useRef(createShakeState());
+  const lastShake = useRef({x: 0, y: 0});
+  const hitFlashes = useRef(createFlashMap());
+  const lastFxNow = useRef(0);
+  const flashTargets = useRef(new Map<string, THREE.Object3D>());
   const lastFootstepDist = useRef(0);
 
   // Weapon Viewmodel Swing Animation Ref
@@ -376,7 +389,6 @@ function DungeonScene({
     const pYaw = playerYaw.current;
     forwardVec.set(-Math.sin(pYaw), 0, -Math.cos(pYaw)).normalize();
 
-    let hitAny = false;
     const reach = 3.5;
     const baseDmg =
       (playerStats.equippedWeapon.damage || getConfig('baseSwordDamage')) +
@@ -390,7 +402,6 @@ function DungeonScene({
         scratchVec2.subVectors(scratchVec1, pPos).normalize();
         const dot = forwardVec.dot(scratchVec2);
         if (dot > 0.4) {
-          hitAny = true;
           const isCrit = Math.random() < playerStats.critChance;
           const dmg = Math.round(
             baseDmg * (isCrit ? 1.8 : 1.0) * (0.9 + Math.random() * 0.2),
@@ -399,6 +410,8 @@ function DungeonScene({
           enemy.hp -= dmg;
           enemy.state = 'hurt';
           enemy.stateTimer = 0.2;
+          triggerHitFlash(hitFlashes.current, enemy.id, performance.now());
+          triggerScreenShake(screenShake.current, outgoingShakeAmount(dmg, isCrit));
 
           spawnFloatingText(
             isCrit ? `${dmg}! CRIT` : `${dmg}`,
@@ -425,9 +438,6 @@ function DungeonScene({
       }
     });
 
-    if (hitAny) {
-      screenShake.current = 0.15;
-    }
   };
 
   // Player Magic Fireball Cast
@@ -635,6 +645,23 @@ function DungeonScene({
   useFrame((_, delta) => {
     if (paused) {
       wasPausedRef.current = true;
+      const now = performance.now();
+      const prevNow = lastFxNow.current;
+      if (prevNow > 0) holdHitFlashes(hitFlashes.current, now - prevNow);
+      syncHitFlashes(hitFlashes.current, flashTargets.current, now);
+      lastFxNow.current = now;
+      const applied = lastShake.current;
+      if (applied.x !== 0 || applied.y !== 0) {
+        camera.position.x -= applied.x;
+        camera.position.y -= applied.y;
+        if (viewmodelRef.current) {
+          viewmodelRef.current.position.x -= applied.x;
+          viewmodelRef.current.position.y -= applied.y;
+        }
+        applied.x = 0;
+        applied.y = 0;
+      }
+      stepScreenShake(screenShake.current, 0, {enabled: isScreenShakeEnabled(), paused: true});
       return;
     }
     const dt = frameDelta(delta, wasPausedRef.current);
@@ -805,15 +832,13 @@ function DungeonScene({
 
     // Camera Positioning & Orientation
     const bobOffset = isMoving ? Math.sin(headBob.current) * 0.06 : 0;
-    let shakeX = 0;
-    let shakeY = 0;
-    if (screenShake.current > 0) {
-      screenShake.current -= dt * 2.5;
-      shakeX = (Math.random() - 0.5) * screenShake.current * 0.3;
-      shakeY = (Math.random() - 0.5) * screenShake.current * 0.3;
-    }
+    const shake = stepScreenShake(screenShake.current, dt, {
+      enabled: isScreenShakeEnabled(),
+    });
+    lastShake.current.x = shake.x;
+    lastShake.current.y = shake.y;
 
-    camera.position.set(pPos.x + shakeX, pPos.y + bobOffset + shakeY, pPos.z);
+    camera.position.set(pPos.x + shake.x, pPos.y + bobOffset + shake.y, pPos.z);
     camera.rotation.order = 'YXZ';
     camera.rotation.y = playerYaw.current;
     camera.rotation.x = playerPitch.current;
@@ -836,7 +861,13 @@ function DungeonScene({
         viewmodelRef.current.position.set(0.35, -0.3 + breathe, -0.6);
         viewmodelRef.current.rotation.set(0, 0, 0);
       }
+      applyCameraLocalPose(viewmodelRef.current, camera);
+      flashTargets.current.set(PLAYER_FLASH_ID, viewmodelRef.current);
     }
+
+    const fxNow = performance.now();
+    syncHitFlashes(hitFlashes.current, flashTargets.current, fxNow);
+    lastFxNow.current = fxNow;
 
     // Update Spike Traps
     trapsRef.current.forEach((trap) => {
@@ -990,6 +1021,8 @@ function DungeonScene({
               enemy.hp -= dmg;
               enemy.state = 'hurt';
               enemy.stateTimer = 0.2;
+              triggerHitFlash(hitFlashes.current, enemy.id, performance.now());
+              triggerScreenShake(screenShake.current, outgoingShakeAmount(dmg, isCrit));
 
               spawnFloatingText(
                 isCrit ? `${dmg}! CRIT` : `${dmg}`,
@@ -1065,7 +1098,8 @@ function DungeonScene({
     );
 
     gameAudio.playMeleePunch();
-    screenShake.current = 0.35;
+    triggerHitFlash(hitFlashes.current, PLAYER_FLASH_ID, performance.now());
+    triggerScreenShake(screenShake.current, playerHurtShake(finalDmg));
 
     setPlayerStats((prev) => {
       const newHp = applyDamage(prev.hp, finalDmg, debugCheats.godMode);
@@ -1107,7 +1141,13 @@ function DungeonScene({
       />
 
       {/* First-Person Animated Viewmodel: Sword & Magic Glow */}
-      <group ref={viewmodelRef} position={[0.35, -0.3, -0.6]}>
+      <group
+        ref={(node) => {
+          viewmodelRef.current = node;
+          if (node) flashTargets.current.set(PLAYER_FLASH_ID, node);
+          else flashTargets.current.delete(PLAYER_FLASH_ID);
+        }}
+        position={[0.35, -0.3, -0.6]}>
         {/* Sword Blade */}
         <mesh position={[0, 0.4, 0]} rotation={[0, 0, 0.1]}>
           <boxGeometry args={[0.08, 0.7, 0.02]} />
@@ -1362,6 +1402,14 @@ function DungeonScene({
         return (
           <group
             key={enemy.id}
+            ref={(node) => {
+              if (node) {
+                node.userData.adFlashId = enemy.id;
+                flashTargets.current.set(enemy.id, node);
+              } else {
+                flashTargets.current.delete(enemy.id);
+              }
+            }}
             position={enemy.pos}
             rotation={[0, enemy.rotY, 0]}
             scale={[s, s, s]}>
