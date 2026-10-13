@@ -25,8 +25,10 @@ import {
 } from './types';
 import {gameAudio} from './utils';
 import {GameState} from './utils/helper';
+import {frameDelta} from './pause';
 
 interface GameProps {
+  paused: boolean;
   gameState: GameState;
   setGameState: React.Dispatch<React.SetStateAction<GameState>>;
   gameStateRef: MutableRefObject<GameState>;
@@ -142,6 +144,7 @@ function createDungeonWallTexture(): THREE.CanvasTexture {
 
 /** Inner Scene Component handling Camera, Combat, Entities, Lighting, and FX */
 function DungeonScene({
+  paused,
   gameState,
   setGameState,
   inputRef,
@@ -223,6 +226,7 @@ function DungeonScene({
 
   // Latch so GAME_OVER status & defeat motif fire exactly once per run
   const gameOverLatchedRef = useRef(false);
+  const wasPausedRef = useRef(true);
 
   // Initialize floor layout and player spawn
   useEffect(() => {
@@ -587,8 +591,12 @@ function DungeonScene({
 
   // Main 60FPS Game & Physics Loop
   useFrame((_, delta) => {
-    if (gameState.status !== 'PLAYING') return;
-    const dt = Math.min(delta, 0.1);
+    if (paused) {
+      wasPausedRef.current = true;
+      return;
+    }
+    const dt = frameDelta(delta, wasPausedRef.current);
+    wasPausedRef.current = false;
 
     // Handle touch look delta from mobile
     if (touchLookDeltaRef.current.dx !== 0 || touchLookDeltaRef.current.dy !== 0) {
