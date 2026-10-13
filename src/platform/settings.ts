@@ -1,4 +1,5 @@
 import {getJSON, setJSON} from './storage';
+import {DEFAULT_KEY_BINDINGS, normalizeBindings, type KeyBindings} from './keybindings';
 import playgroundConfig from '../../playground_config.json';
 
 /** localStorage key shared with src/platform/config.ts. */
@@ -14,6 +15,8 @@ export interface UserSettings {
   sfxVolume: number;
   /** Camera shake on damage. Defaults on; reduced-motion still suppresses it. */
   screenShake: boolean;
+  /** Rebindable keyboard controls (KeyboardEvent.code per action). */
+  keyBindings: KeyBindings;
 }
 
 export const SETTINGS_LIMITS = {
@@ -30,6 +33,7 @@ export const DEFAULT_SETTINGS: Readonly<UserSettings> = Object.freeze({
   musicVolume: 0.15,
   sfxVolume: 0.7,
   screenShake: playgroundConfig.values?.screenShake !== false,
+  keyBindings: DEFAULT_KEY_BINDINGS,
 });
 
 function clampNum(v: unknown, min: number, max: number, fallback: number): number {
@@ -55,6 +59,7 @@ export function normalizeSettings(raw: unknown): UserSettings {
     musicVolume: clampNum(src.musicVolume ?? src.defaultMusicVolume, L.musicVolume.min, L.musicVolume.max, D.musicVolume),
     sfxVolume: clampNum(src.sfxVolume ?? src.defaultSfxVolume, L.sfxVolume.min, L.sfxVolume.max, D.sfxVolume),
     screenShake: typeof src.screenShake === 'boolean' ? src.screenShake : D.screenShake,
+    keyBindings: normalizeBindings(src.keyBindings),
   };
 }
 

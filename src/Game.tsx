@@ -5,6 +5,15 @@ import {Bloom, EffectComposer} from '@react-three/postprocessing';
 import type {MutableRefObject} from 'react';
 import React, {Suspense, useEffect, useMemo, useRef, useState} from 'react';
 import * as THREE from 'three';
+import {
+  advanceTelegraph,
+  BOSS_TELEGRAPH_WINDUP,
+  isInsideRing,
+  meleeHitLands,
+  startTelegraph,
+  usesGroundTelegraph,
+} from './bossTelegraph';
+import {BossTelegraph} from './components/BossTelegraph';
 import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
 import {applyCameraLocalPose, createFlashMap, holdHitFlashes, PLAYER_FLASH_ID, syncHitFlashes, triggerHitFlash} from './fx/hitFlash';
 import {createHitStopState, isHeavyHit, stepHitStop, triggerHitStop} from './fx/hitStop';
@@ -16,10 +25,15 @@ import {
   stepScreenShake,
   triggerScreenShake,
 } from './fx/screenShake';
+import {FloatingTextStore} from './floatingText';
+import {FloatingTextSprite} from './components/FloatingTextSprite';
+import {roomClearChests} from './drops';
 import {generateDungeonFloor} from './dungeonGenerator';
 import {createOneShotLatch} from './floorLatch';
 import {InputSnapshot, useInput} from './input';
+import {syncMinimapBridge, type MinimapBridge} from './minimap';
 import {enemyKillScore, isGameOver} from './rules';
+import {applyDamage, debugCheats} from './debug';
 import {
   ChestEntity,
   DungeonFloorData,
@@ -56,6 +70,7 @@ interface GameProps {
   currentBossRef: MutableRefObject<EnemyEntity | null>;
   activeEnemiesCountRef: MutableRefObject<number>;
   floorDataRef: MutableRefObject<DungeonFloorData | null>;
+  minimapBridgeRef: MutableRefObject<MinimapBridge>;
 }
 
 // Scratch temporaries for zero-allocation game loop
@@ -172,6 +187,7 @@ function DungeonScene({
   currentBossRef,
   activeEnemiesCountRef,
   floorDataRef,
+  minimapBridgeRef,
 }: GameProps & {inputRef: MutableRefObject<InputSnapshot>}): React.ReactElement {
   const {camera, gl} = useThree();
 
@@ -210,8 +226,7 @@ function DungeonScene({
   projectilesRef.current = projectiles;
 
   const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
-  const floatingTextsRef = useRef<FloatingText[]>([]);
-  floatingTextsRef.current = floatingTexts;
+  const textStore = useRef(new FloatingTextStore()).current;
 
   const [particles, setParticles] = useState<SparkParticle[]>([]);
   const particlesRef = useRef<SparkParticle[]>([]);
@@ -260,6 +275,7 @@ function DungeonScene({
     setShrines(generated.floorData.shrines);
     setTraps(generated.floorData.traps);
     setProjectiles([]);
+    textStore.clear();
     setFloatingTexts([]);
     setParticles([]);
 
@@ -269,6 +285,17 @@ function DungeonScene({
     camera.position.set(sp[0], 1.5, sp[2]);
     playerYaw.current = 0;
     playerPitch.current = 0;
+    syncMinimapBridge(minimapBridgeRef.current, {
+      tiles: generated.floorData.tiles,
+      rooms: generated.floorData.rooms,
+      gridSize: generated.floorData.gridSize,
+      playerX: sp[0],
+      playerZ: sp[2],
+      playerYaw: 0,
+      enemies: generated.enemies,
+      chests: generated.floorData.chests,
+      stairs: generated.floorData.stairs,
+    });
 
     gameAudio.playFootstepStone();
   }, [floorLevel]);
@@ -323,18 +350,8 @@ function DungeonScene({
     color = '#ffffff',
     isCrit = false,
   ) => {
-    const id = `ft_${Date.now()}_${Math.random()}`;
-    const newText: FloatingText = {
-      id,
-      text,
-      pos: [pos[0], pos[1] + 0.5, pos[2]],
-      color,
-      life: 0,
-      maxLife: 1.2,
-      scale: isCrit ? 1.4 : 1.0,
-      isCrit,
-    };
-    setFloatingTexts((prev) => [...prev.slice(-15), newText]);
+    textStore.spawn(text, pos, color, isCrit);
+    setFloatingTexts([...textStore.list]);
   };
 
   // Spawn spark hit particles
@@ -614,6 +631,12 @@ function DungeonScene({
       ], '#f59e0b');
     }
 
+    const roomDrops = roomClearChests(floorData, enemiesRef.current, enemy);
+    if (roomDrops.length) {
+      setChests((prev) => [...prev, ...roomDrops]);
+      spawnFloatingText('Potion!', roomDrops[0].pos, '#22c55e');
+    }
+
     if (enemy.isBoss) {
       setStairsUnlocked(true);
       spawnFloatingText('STAIRS TO NEXT FLOOR OPEN!', enemy.pos, '#10b981');
@@ -647,6 +670,16 @@ function DungeonScene({
     }
     const dt = stepHitStop(hitStop.current, frameDelta(delta, wasPausedRef.current), paused).dt;
     wasPausedRef.current = false;
+
+    if (debugCheats.killBossRequested) {
+      debugCheats.killBossRequested = false;
+      const boss = enemiesRef.current.find((e) => e.isBoss && e.hp > 0);
+      if (boss) {
+        boss.hp = 0;
+        handleEnemyDefeated(boss);
+        setEnemies([...enemiesRef.current]);
+      }
+    }
 
     // Handle touch look delta from mobile
     if (touchLookDeltaRef.current.dx !== 0 || touchLookDeltaRef.current.dy !== 0) {
@@ -871,6 +904,11 @@ function DungeonScene({
       );
       enemy.rotY = angleToPlayer;
 
+      // Clear a boss telegraph if the enemy was knocked out of windup (e.g. hurt)
+      if (enemy.telegraph && enemy.state !== 'windup') {
+        enemy.telegraph = undefined;
+      }
+
       // Enemy AI States
       if (distToPlayer < 20.0) {
         if (enemy.state === 'idle') {
@@ -885,15 +923,30 @@ function DungeonScene({
             enemy.pos[2] += Math.cos(angleToPlayer) * speed;
           } else {
             enemy.state = 'windup';
-            enemy.stateTimer = 0.5;
-            enemy.telegraphTimer = 0.5;
+            const groundTelegraph = usesGroundTelegraph(
+              enemy.isBoss,
+              enemy.archetype,
+            );
+            enemy.stateTimer = groundTelegraph ? BOSS_TELEGRAPH_WINDUP : 0.5;
+            enemy.telegraphTimer = enemy.stateTimer;
+            if (groundTelegraph) {
+              // Telegraph locks onto the player's current position
+              enemy.telegraph = startTelegraph(pPos.x, pPos.z);
+            }
           }
         } else if (enemy.state === 'windup') {
-          enemy.stateTimer -= dt;
-          enemy.telegraphTimer = enemy.stateTimer;
-          if (enemy.stateTimer <= 0) {
+          if (!paused) {
+            enemy.stateTimer -= dt;
+            enemy.telegraphTimer = enemy.stateTimer;
+          }
+          if (enemy.telegraph) {
+            enemy.telegraph = advanceTelegraph(enemy.telegraph, dt, paused);
+          }
+          if (!paused && enemy.stateTimer <= 0) {
             enemy.state = 'attack';
             enemy.stateTimer = 0.3;
+            const tel = enemy.telegraph;
+            enemy.telegraph = undefined;
 
             // Execute attack
             if (enemy.archetype === 'cultist' || enemy.archetype === 'boss_crimson_archmage') {
@@ -922,7 +975,10 @@ function DungeonScene({
               setProjectiles((prev) => [...prev, enemyProj]);
             } else {
               // Melee Strike
-              if (distToPlayer <= enemy.attackRange + 1.0) {
+              const insideRing = tel
+                ? isInsideRing(pPos.x, pPos.z, tel.cx, tel.cz, tel.radius)
+                : true;
+              if (meleeHitLands(distToPlayer <= enemy.attackRange + 1.0, insideRing)) {
                 applyPlayerDamage(enemy.attackPower, enemy.name);
                 gameAudio.playMeleePunch();
               }
@@ -1005,17 +1061,7 @@ function DungeonScene({
     }
 
     // Update Floating Texts
-    if (floatingTextsRef.current.length > 0) {
-      const activeTexts: FloatingText[] = [];
-      floatingTextsRef.current.forEach((ft) => {
-        ft.life += dt;
-        ft.pos[1] += dt * 1.5; // Float upwards
-        if (ft.life < ft.maxLife) {
-          activeTexts.push(ft);
-        }
-      });
-      setFloatingTexts(activeTexts);
-    }
+    if (textStore.update(dt)) setFloatingTexts([...textStore.list]);
 
     // Update Particles
     if (particlesRef.current.length > 0) {
@@ -1032,6 +1078,18 @@ function DungeonScene({
       });
       setParticles(activeParts);
     }
+
+    syncMinimapBridge(minimapBridgeRef.current, {
+      tiles: floorData.tiles,
+      rooms: floorData.rooms,
+      gridSize: floorData.gridSize,
+      playerX: playerPos.current.x,
+      playerZ: playerPos.current.z,
+      playerYaw: playerYaw.current,
+      enemies: enemiesRef.current,
+      chests: chestsRef.current,
+      stairs: floorData.stairs,
+    });
   });
 
   // Player Damage Application
@@ -1050,7 +1108,7 @@ function DungeonScene({
     if (isHeavyHit(finalDmg)) triggerHitStop(hitStop.current);
 
     setPlayerStats((prev) => {
-      const newHp = Math.max(0, prev.hp - finalDmg);
+      const newHp = applyDamage(prev.hp, finalDmg, debugCheats.godMode);
       if (isGameOver(newHp) && !gameOverLatchedRef.current) {
         gameOverLatchedRef.current = true;
         setGameState((g) => ({...g, status: 'GAME_OVER'}));
@@ -1212,6 +1270,10 @@ function DungeonScene({
             color="#ff8c00"
           />
         </group>
+      ))}
+
+      {floatingTexts.map((ft) => (
+        <FloatingTextSprite key={ft.id} ft={ft} />
       ))}
 
       {/* Treasure Chests */}
@@ -1516,6 +1578,16 @@ function DungeonScene({
           </group>
         );
       })}
+
+      {/* Boss Attack Telegraphs (world-space, locked at windup start) */}
+      {enemies.map(
+        (enemy) =>
+          enemy.hp > 0 &&
+          enemy.isBoss &&
+          enemy.telegraph && (
+            <BossTelegraph key={`tel_${enemy.id}`} telegraph={enemy.telegraph} />
+          ),
+      )}
 
       {/* Projectiles */}
       {projectiles.map((proj) => (

@@ -1,5 +1,13 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {prefersReducedMotion} from '../fx/screenShake';
+import {
+  ACTION_LABELS,
+  BINDABLE_ACTIONS,
+  keyLabel,
+  rebind,
+  resetBindings,
+  type BindableAction,
+} from '../platform/keybindings';
 import {SETTINGS_LIMITS, type UserSettings} from '../platform/settings';
 
 export interface SettingsPanelProps {
@@ -46,6 +54,36 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 /** Settings panel: look sensitivity, aim assist, screen shake, music and SFX volume. */
 export function SettingsPanel({settings, onChange, onClose}: SettingsPanelProps) {
   const L = SETTINGS_LIMITS;
+  const [listening, setListening] = useState<BindableAction | null>(null);
+  const [notice, setNotice] = useState('');
+
+  // While waiting for a key, capture the next keydown (Escape cancels).
+  useEffect(() => {
+    if (!listening) return;
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.code === 'Escape') {
+        setListening(null);
+        return;
+      }
+      const res = rebind(settings.keyBindings, listening, e.code);
+      if (res.ok) {
+        onChange({keyBindings: res.bindings});
+        setNotice(
+          res.swappedWith
+            ? `Swapped with ${ACTION_LABELS[res.swappedWith]} (now ${keyLabel(res.bindings[res.swappedWith])})`
+            : '',
+        );
+      } else {
+        setNotice(res.reason === 'reserved' ? 'That key is reserved.' : 'Unsupported key.');
+      }
+      setListening(null);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [listening, settings.keyBindings, onChange]);
+
   return (
     <div
       data-testid="settings-panel"
@@ -100,6 +138,44 @@ export function SettingsPanel({settings, onChange, onClose}: SettingsPanelProps)
         display={pct(settings.sfxVolume)}
         onChange={(v) => onChange({sfxVolume: v})}
       />
+      <div className="flex flex-col gap-1 text-xs">
+        <span className="font-bold text-zinc-300">Key Bindings</span>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1 max-h-48 overflow-y-auto pr-1">
+          {BINDABLE_ACTIONS.map((a) => (
+            <div key={a} className="flex items-center justify-between gap-2">
+              <span className="text-zinc-400 truncate">{ACTION_LABELS[a]}</span>
+              <button
+                data-testid={`bind-${a}`}
+                onClick={() => {
+                  setNotice('');
+                  setListening(a);
+                }}
+                className={`min-w-14 px-2 py-1 rounded border font-mono font-bold ${
+                  listening === a
+                    ? 'border-amber-400 text-amber-300 animate-pulse'
+                    : 'border-zinc-600 text-zinc-100 bg-zinc-800'
+                }`}>
+                {listening === a ? '…' : keyLabel(settings.keyBindings[a])}
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="flex justify-between items-center mt-1">
+          <span data-testid="bind-notice" className="text-amber-300 text-[10px]">
+            {notice || 'Click a key, then press the new key (Esc cancels). Conflicts swap.'}
+          </span>
+          <button
+            data-testid="bind-reset"
+            onClick={() => {
+              setListening(null);
+              setNotice('');
+              onChange({keyBindings: resetBindings()});
+            }}
+            className="shrink-0 px-2 py-1 rounded border border-zinc-600 text-zinc-300 hover:bg-zinc-800 font-bold">
+            RESET KEYS
+          </button>
+        </div>
+      </div>
       <button
         onClick={onClose}
         autoFocus

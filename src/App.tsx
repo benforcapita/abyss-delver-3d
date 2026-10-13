@@ -22,12 +22,16 @@ import {
   VolumeX,
   Zap,
 } from 'lucide-react';
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {AVAILABLE_MUSIC_TRACKS, getConfig} from './constants';
 import {ActionButtons} from './components/ActionButtons';
 import {VirtualJoystick} from './components/VirtualJoystick';
 import {Game} from './Game';
+import {DebugPanel} from './components/DebugPanel';
+import {Minimap} from './components/Minimap';
 import {RotatePrompt} from './components/RotatePrompt';
+import {isDebugEnabled} from './debug';
+import {createMinimapBridge} from './minimap';
 import {
   DungeonFloorData,
   EnemyEntity,
@@ -46,6 +50,7 @@ import {
 } from './utils/helper';
 import {sdk, useGameLifecycle} from './platform/lifecycle';
 import {getSettings, saveSettings, subscribeSettings} from './platform/settings';
+import {actionsForCode} from './platform/keybindings';
 import {SettingsPanel} from './components/SettingsPanel';
 import {FINAL_FLOOR, floorClearScore, isVictory, victoryBonus} from './rules';
 import {loadBest, saveBest, type BestScore} from './bestScore';
@@ -97,6 +102,10 @@ const DEFAULT_RING: LootItem = {
 
 export default function App() {
   const isMobile = useIsMobile();
+  const debugEnabled = useMemo(
+    () => isDebugEnabled(window.location.search, import.meta.env.DEV),
+    [],
+  );
 
   const [gameState, setGameState] = useState<GameState>({
     status: 'START',
@@ -189,6 +198,7 @@ export default function App() {
   const [bossHudState, setBossHudState] = useState<EnemyEntity | null>(null);
   const activeEnemiesCountRef = useRef(0);
   const floorDataRef = useRef<DungeonFloorData | null>(null);
+  const minimapBridgeRef = useRef(createMinimapBridge());
 
   // Best score (persisted in localStorage `ad3d.best.v1`). Saved once per
   // terminal transition (GAME_OVER / VICTORY), latched until a new run starts.
@@ -235,18 +245,22 @@ export default function App() {
       }
 
       if (gameState.status === 'PLAYING' && !isGameMenuOpen && !isHowToPlayOpen) {
-        if (e.key === 'q' || e.key === '1') {
-          // Drink Potion
-          drinkPotion();
-        } else if (e.key === '2' || e.key === 'f') {
-          // Cast Fireball Spell
-          triggerSpellRef.current = true;
-        } else if (e.key === 'e') {
-          // Interact
-          triggerInteractRef.current = true;
-        } else if (e.key === 'Shift' || e.key === ' ') {
-          // Dash
-          triggerDashRef.current = true;
+        // A key can map to two actions (default Space = attack + dash);
+        // attack itself is read from the input snapshot in Game.
+        for (const action of actionsForCode(getSettings().keyBindings, e.code)) {
+          if (action === 'potion') {
+            // Drink Potion
+            drinkPotion();
+          } else if (action === 'spell') {
+            // Cast Fireball Spell
+            triggerSpellRef.current = true;
+          } else if (action === 'interact') {
+            // Interact
+            triggerInteractRef.current = true;
+          } else if (action === 'dash') {
+            // Dash
+            triggerDashRef.current = true;
+          }
         }
       }
     };
@@ -461,6 +475,7 @@ export default function App() {
           currentBossRef={currentBossRef}
           activeEnemiesCountRef={activeEnemiesCountRef}
           floorDataRef={floorDataRef}
+          minimapBridgeRef={minimapBridgeRef}
         />
 
         <div
@@ -501,7 +516,7 @@ export default function App() {
 
               {/* Top Center: Floor Boss Health Bar */}
               {bossHudState && bossHudState.hp > 0 && (
-                <div className="flex-1 max-w-xs md:max-w-md mx-2 flex flex-col items-center animate-fade-in">
+                <div className="flex-1 min-w-0 max-w-xs md:max-w-md mx-2 flex flex-col items-center animate-fade-in">
                   <div className="flex items-center gap-2 mb-1">
                     <Flame className="w-4 h-4 text-red-500" />
                     <span className="text-xs md:text-sm font-black tracking-widest text-red-400 uppercase">
@@ -519,14 +534,17 @@ export default function App() {
                 </div>
               )}
 
-              {/* TOP RIGHT: Game Menu Trigger Button (Reserved Safe Zone) */}
-              <div className="pointer-events-auto">
-                <button
-                  onClick={() => setIsGameMenuOpen(true)}
-                  className="bg-black/80 hover:bg-zinc-800 active:scale-95 text-amber-400 border border-amber-500/50 px-3 py-1.5 rounded-lg font-bold text-xs md:text-sm flex items-center gap-1.5 shadow-xl transition-all">
-                  <MenuIcon className="w-4 h-4" />
-                  <span>MENU</span>
-                </button>
+              {/* TOP RIGHT: menu, then the minimap in its own slot under it */}
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                <div className="pointer-events-auto">
+                  <button
+                    onClick={() => setIsGameMenuOpen(true)}
+                    className="bg-black/80 hover:bg-zinc-800 active:scale-95 text-amber-400 border border-amber-500/50 px-3 py-1.5 rounded-lg font-bold text-xs md:text-sm flex items-center gap-1.5 shadow-xl transition-all">
+                    <MenuIcon className="w-4 h-4" />
+                    <span>MENU</span>
+                  </button>
+                </div>
+                <Minimap bridge={minimapBridgeRef} active />
               </div>
             </div>
 
@@ -979,6 +997,16 @@ export default function App() {
           tone="danger">
           <BestScoreLine best={best} className="mb-6" />
         </Overlay>
+      )}
+
+      {debugEnabled && gameState.status === 'PLAYING' && (
+        <DebugPanel
+          onSkipFloor={() => {
+            if (gameState.level < FINAL_FLOOR) {
+              advanceToNextFloor();
+            }
+          }}
+        />
       )}
     </div>
   );
