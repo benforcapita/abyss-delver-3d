@@ -21,7 +21,7 @@ beforeEach(() => {
 describe('settings store', () => {
   it('has the agreed defaults', () => {
     expect(S.DEFAULT_SETTINGS).toEqual({
-      lookSensitivity: 1.8, touchLookSensitivity: 1.8, enableAutoAimAssist: true, musicVolume: 0.15, sfxVolume: 0.7, screenShake: true,
+      lookSensitivity: 1.8, touchLookSensitivity: 1.8, enableAutoAimAssist: true, musicVolume: 0.15, sfxVolume: 0.7, touchSoftLock: true, screenShake: true,
       keyBindings: S.DEFAULT_SETTINGS.keyBindings,
     });
   });
@@ -35,7 +35,7 @@ describe('settings store', () => {
     S.saveSettings({lookSensitivity: 2.5, touchLookSensitivity: 2.5, enableAutoAimAssist: false, musicVolume: 0.2, sfxVolume: 0.9});
     expect(JSON.parse(store.get(KEY)!)).toMatchObject({lookSensitivity: 2.5, musicVolume: 0.2});
     expect(S.reloadSettings()).toEqual({
-      lookSensitivity: 2.5, touchLookSensitivity: 2.5, enableAutoAimAssist: false, musicVolume: 0.2, sfxVolume: 0.9, screenShake: true,
+      lookSensitivity: 2.5, touchLookSensitivity: 2.5, enableAutoAimAssist: false, musicVolume: 0.2, sfxVolume: 0.9, touchSoftLock: true, screenShake: true,
       keyBindings: S.DEFAULT_SETTINGS.keyBindings,
     });
   });
