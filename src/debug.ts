@@ -17,3 +17,7 @@ export function isDebugEnabled(search: string, isDev: boolean): boolean {
     return false;
   }
 }
+
+export function applyDamage(hp: number, dmg: number, godMode: boolean): number {
+  return godMode ? hp : Math.max(0, hp - dmg);
+}

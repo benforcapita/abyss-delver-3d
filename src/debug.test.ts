@@ -1,5 +1,5 @@
 import {afterEach, describe, expect, it} from 'vitest';
-import {debugCheats, isDebugEnabled} from './debug';
+import {applyDamage, debugCheats, isDebugEnabled} from './debug';
 
 describe('isDebugEnabled', () => {
   describe('DEV on/off', () => {
@@ -86,5 +86,25 @@ describe('debugCheats', () => {
 
     debugCheats.killBossRequested = true;
     expect(debugCheats.killBossRequested).toBe(true);
+  });
+});
+
+describe('applyDamage', () => {
+  it('blocks damage in god mode and returns hp unchanged', () => {
+    expect(applyDamage(100, 20, true)).toBe(100);
+    expect(applyDamage(100, 999, true)).toBe(100);
+    expect(applyDamage(50, 0, true)).toBe(50);
+  });
+
+  it('deals normal damage when god mode is disabled', () => {
+    expect(applyDamage(100, 20, false)).toBe(80);
+    expect(applyDamage(100, 0, false)).toBe(100);
+    expect(applyDamage(55, 12, false)).toBe(43);
+  });
+
+  it('clamps hp at 0 when damage equals or exceeds current hp', () => {
+    expect(applyDamage(50, 50, false)).toBe(0);
+    expect(applyDamage(50, 100, false)).toBe(0);
+    expect(applyDamage(0, 10, false)).toBe(0);
   });
 });

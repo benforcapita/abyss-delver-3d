@@ -9,7 +9,7 @@ import {getConfig} from './constants';
 import {generateDungeonFloor} from './dungeonGenerator';
 import {InputSnapshot, useInput} from './input';
 import {enemyKillScore, isGameOver} from './rules';
-import {debugCheats} from './debug';
+import {applyDamage, debugCheats} from './debug';
 import {
   ChestEntity,
   DungeonFloorData,
@@ -990,8 +990,7 @@ function DungeonScene({
     screenShake.current = 0.35;
 
     setPlayerStats((prev) => {
-      if (debugCheats.godMode) return prev;
-      const newHp = Math.max(0, prev.hp - finalDmg);
+      const newHp = applyDamage(prev.hp, finalDmg, debugCheats.godMode);
       if (isGameOver(newHp) && !gameOverLatchedRef.current) {
         gameOverLatchedRef.current = true;
         setGameState((g) => ({...g, status: 'GAME_OVER'}));
