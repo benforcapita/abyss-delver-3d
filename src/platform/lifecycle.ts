@@ -1,28 +1,17 @@
 import {useEffect, useRef} from 'react';
-import {getJSON, setJSON} from './storage';
 
-export const BEST_SCORE_KEY = 'ad3d.best';
-
-export interface BestScore {
-  score: number;
-  floor?: number;
-}
+export type {BestScore} from '../bestScore';
 
 /**
- * Local no-op replacement for the Playground SDK. `startGame` does nothing;
- * `gameOver` persists the best score to localStorage ('ad3d.best').
+ * Local no-op replacement for the Playground SDK. Best-score persistence is
+ * owned solely by App.tsx via `saveBest` in `src/bestScore.ts` (key
+ * `ad3d.best.v1`); `gameOver` deliberately does not write storage, so a
+ * finished run is saved exactly once.
  */
 export const sdk = {
   startGame(): void {},
-  gameOver(score: number, floor?: number): void {
-    const prev = getJSON<BestScore>(BEST_SCORE_KEY);
-    if (!prev || score > prev.score) {
-      setJSON(BEST_SCORE_KEY, {
-        score,
-        ...(floor !== undefined ? {floor} : {}),
-      });
-    }
-  },
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  gameOver(_score: number, _floor?: number): void {},
 };
 
 export type GameLifecycleSdk = typeof sdk;
