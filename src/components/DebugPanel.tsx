@@ -41,7 +41,7 @@ export function DebugPanel({onSkipFloor}: DebugPanelProps) {
     <div
       data-testid="debug-panel"
       title="DEBUG"
-      className="fixed top-[calc(max(0.5rem,env(safe-area-inset-top,0px))+2.5rem)] md:top-[calc(max(1rem,env(safe-area-inset-top,0px))+2.75rem)] right-[max(0.5rem,env(safe-area-inset-right,0px))] md:right-[max(1rem,env(safe-area-inset-right,0px))] z-50 bg-black/85 backdrop-blur border border-amber-500/60 rounded-lg p-2.5 shadow-2xl flex flex-col gap-1.5 text-xs text-white pointer-events-auto select-none">
+      className="fixed top-[calc(max(0.5rem,env(safe-area-inset-top,0px))+2.5rem)] md:top-[calc(max(1rem,env(safe-area-inset-top,0px))+2.75rem)] left-[max(0.5rem,env(safe-area-inset-left,0px))] md:left-[max(1rem,env(safe-area-inset-left,0px))] z-50 bg-black/85 backdrop-blur border border-amber-500/60 rounded-lg p-2.5 shadow-2xl flex flex-col gap-1.5 text-xs text-white pointer-events-auto select-none">
       <div className="font-mono text-[10px] uppercase font-bold text-amber-400">DEBUG</div>
       <div className="flex flex-col gap-1">
         <button
