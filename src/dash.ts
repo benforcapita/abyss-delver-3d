@@ -4,6 +4,8 @@
  * docs/proposals/AD-24-controls.md §3 ("backwards when the stick is centered").
  */
 
+import { cameraMoveVector, localToWorld, type Vec2 } from './cameraBasis';
+
 export interface MoveInput {
   /** Strafe: -1 left … +1 right. */
   x: number;
@@ -35,21 +37,11 @@ export function moveInputFrom(
 export const DASH_IDLE_EPSILON = 0.05;
 
 /**
- * World-space unit (x, z) dash direction for the camera yaw. Local forward
- * (z = -1) maps to the camera's facing (-sin yaw, -cos yaw); local right
- * (x = +1) maps to the camera's right (cos yaw, -sin yaw).
+ * World-space unit (x, z) dash direction for the camera yaw, using the shared
+ * camera basis (src/cameraBasis.ts) so dash and walking always agree. Idle
+ * input (below DASH_IDLE_EPSILON) back-dodges: local back (0, +1).
  */
-export function dashDirection(move: MoveInput, yaw: number): { x: number; z: number } {
-  let { x, z } = move;
-  const len = Math.hypot(x, z);
-  if (len < DASH_IDLE_EPSILON) {
-    x = 0;
-    z = 1; // idle → back-dodge
-  } else {
-    x /= len;
-    z /= len;
-  }
-  const c = Math.cos(yaw);
-  const s = Math.sin(yaw);
-  return { x: x * c + z * s, z: -x * s + z * c };
+export function dashDirection(move: MoveInput, yaw: number): Vec2 {
+  if (Math.hypot(move.x, move.z) < DASH_IDLE_EPSILON) return localToWorld(0, 1, yaw);
+  return cameraMoveVector(move.x, move.z, yaw);
 }
