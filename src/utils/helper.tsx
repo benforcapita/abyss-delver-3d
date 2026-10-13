@@ -25,6 +25,7 @@ interface OverlayProps {
   icon?: React.ReactNode;
   tone?: OverlayTone;
   autoFocus?: boolean;
+  children?: React.ReactNode;
 }
 
 const TONE_CLASS: Record<OverlayTone, string> = {
@@ -67,6 +68,7 @@ export function Overlay({
   icon,
   tone = 'neutral',
   autoFocus = true,
+  children,
 }: OverlayProps) {
   const buttonRef = useAutoFocus<HTMLButtonElement>(autoFocus);
 
@@ -83,6 +85,7 @@ export function Overlay({
               {description}
             </p>
           )}
+          {children}
           <button
             ref={buttonRef}
             autoFocus={autoFocus}
@@ -993,4 +996,27 @@ export function useIsMobile(): boolean {
   }, []);
 
   return isMobile;
+}
+
+/** "Best: 1234 · Floor 3", or a placeholder when nothing is recorded yet. */
+export function formatBest(best: {score: number; floor: number}): string {
+  if (!best.score && !best.floor) return 'Best: — (no runs yet)';
+  return `Best: ${best.score} · Floor ${best.floor}`;
+}
+
+/** Small line showing the persisted best score and best floor. */
+export function BestScoreLine({
+  best,
+  className = '',
+}: {
+  best: {score: number; floor: number};
+  className?: string;
+}) {
+  return (
+    <p
+      data-testid="best-score"
+      className={`text-sm md:text-base font-bold text-amber-300 text-center ${className}`}>
+      {formatBest(best)}
+    </p>
+  );
 }
