@@ -124,7 +124,7 @@ describe('onboarding', () => {
   it('hint text follows the live key bindings', () => {
     expect(O.text('move', DEFAULT_KEY_BINDINGS, false)).toBe('WASD to move');
     expect(O.text('attack', DEFAULT_KEY_BINDINGS, false)).toBe(
-      'Space to slash',
+      'LMB to slash',
     );
     expect(O.text('dash', DEFAULT_KEY_BINDINGS, false)).toBe(
       'Space to dash through attacks',
