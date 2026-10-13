@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import {AIM_ASSIST_CONE_DEG, AIM_ASSIST_RANGE, getConfig} from './constants';
 import {FloatingTextStore} from './floatingText';
 import {FloatingTextSprite} from './components/FloatingTextSprite';
+import {roomClearChests} from './drops';
 import {generateDungeonFloor} from './dungeonGenerator';
 import {createOneShotLatch} from './floorLatch';
 import {InputSnapshot, useInput} from './input';
@@ -605,6 +606,12 @@ function DungeonScene({
         enemy.pos[1] + 0.8,
         enemy.pos[2],
       ], '#f59e0b');
+    }
+
+    const roomDrops = roomClearChests(floorData, enemiesRef.current, enemy);
+    if (roomDrops.length) {
+      setChests((prev) => [...prev, ...roomDrops]);
+      spawnFloatingText('Potion!', roomDrops[0].pos, '#22c55e');
     }
 
     if (enemy.isBoss) {
