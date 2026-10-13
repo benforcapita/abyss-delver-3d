@@ -170,10 +170,10 @@ export function useInput(
       const pos = getPointerNDC(event, container);
       inputRef.current.pointer = {...pos, down: true};
       if (event.pointerType === 'mouse') {
-        // The left button acts as the bound 'Mouse0' key, but only while the
-        // pointer is locked to this canvas — the click that acquires the lock
-        // must not fire an action.
-        if (event.button === 0 && container.contains(document.pointerLockElement)) {
+        // Pointer-lock click guard (minimal; duplicates #34, drop whichever merges second).
+        if (!document.pointerLockElement) return;
+        // The left button acts as the bound 'Mouse0' key.
+        if (event.button === 0) {
           const action = inputActionForCode('Mouse0');
           if (action) inputRef.current.actions[action] = true;
         }
