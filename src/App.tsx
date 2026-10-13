@@ -130,6 +130,20 @@ export default function App() {
   }, [settings.sfxVolume]);
   const [howToPlaySource, setHowToPlaySource] = useState<'main' | 'game'>('main');
 
+  // Track pointer lock on desktop
+  const [pointerLocked, setPointerLocked] = useState(
+    () => typeof document !== 'undefined' && document.pointerLockElement != null,
+  );
+  useEffect(() => {
+    const handlePointerLockChange = () => {
+      setPointerLocked(document.pointerLockElement != null);
+    };
+    document.addEventListener('pointerlockchange', handlePointerLockChange);
+    return () => {
+      document.removeEventListener('pointerlockchange', handlePointerLockChange);
+    };
+  }, []);
+
   // Player RPG stats
   const [playerStats, setPlayerStats] = useState<PlayerStats>({
     hp: getConfig('playerMaxHp'),
@@ -175,6 +189,14 @@ export default function App() {
     howToOpen: isHowToPlayOpen,
     floorSummaryOpen: showFloorSummary,
   });
+
+  const showPointerLockHint =
+    gameState.status === 'PLAYING' &&
+    !isMobile &&
+    !pointerLocked &&
+    !isGameMenuOpen &&
+    !isHowToPlayOpen &&
+    !showFloorSummary;
 
   const vignetteRef = useRef<HTMLDivElement>(null);
   useLowHpVignette(
@@ -718,6 +740,23 @@ export default function App() {
                   Interact
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Pointer Lock Hint */}
+        {showPointerLockHint && (
+          <div
+            data-testid="pointer-lock-hint"
+            className="absolute inset-0 pointer-events-none flex items-center justify-center z-20"
+          >
+            <div className="pointer-events-none bg-black/75 backdrop-blur border border-amber-500/40 px-4 py-2 rounded-xl flex flex-col items-center gap-0.5 shadow-lg text-center">
+              <span className="text-sm md:text-base font-bold tracking-wide text-amber-400">
+                Click to look
+              </span>
+              <span className="text-[10px] md:text-xs text-zinc-400">
+                Esc to release
+              </span>
             </div>
           </div>
         )}

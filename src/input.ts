@@ -1,6 +1,7 @@
 import {useEffect, useRef, type MutableRefObject, type RefObject} from 'react';
 import {actionsForCode, type BindableAction} from './platform/keybindings';
 import {getSettings} from './platform/settings';
+import {pointerDownAttacks} from './pointerAttack';
 
 /** Actions that can be triggered by the user. */
 export type InputAction =
@@ -169,9 +170,17 @@ export function useInput(
       if (!container) return;
       const pos = getPointerNDC(event, container);
       inputRef.current.pointer = {...pos, down: true};
+      const locked = document.pointerLockElement != null;
+      // Pointer-lock gate (#34): the click that acquires pointer lock never attacks.
+      if (
+        !pointerDownAttacks({
+          pointerType: event.pointerType,
+          pointerLocked: locked,
+        })
+      ) {
+        return;
+      }
       if (event.pointerType === 'mouse') {
-        // Pointer-lock click guard (minimal; duplicates #34, drop whichever merges second).
-        if (!document.pointerLockElement) return;
         // The left button acts as the bound 'Mouse0' key.
         if (event.button === 0) {
           const action = inputActionForCode('Mouse0');
