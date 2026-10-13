@@ -259,9 +259,9 @@ export default function App() {
     };
 
     const handleMouseDown = (e: MouseEvent) => {
-      // Bound 'Mouse0' actions fire only while the pointer is locked to the
-      // game canvas; the click that acquires the lock must not trigger them.
-      if (e.button !== 0 || !document.pointerLockElement) return;
+      if (e.button !== 0) return;
+      // Pointer-lock click guard (minimal; duplicates #34, drop whichever merges second).
+      if (!document.pointerLockElement) return;
       if (gameState.status === 'PLAYING' && !isGameMenuOpen && !isHowToPlayOpen) {
         for (const action of actionsForCode(getSettings().keyBindings, 'Mouse0')) {
           dispatchBoundAction(action);
