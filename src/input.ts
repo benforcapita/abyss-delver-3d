@@ -1,4 +1,6 @@
 import {useEffect, useRef, type MutableRefObject, type RefObject} from 'react';
+import {actionsForCode, type BindableAction} from './platform/keybindings';
+import {getSettings} from './platform/settings';
 
 /** Actions that can be triggered by the user. */
 export type InputAction =
@@ -27,19 +29,24 @@ export interface InputSnapshot {
   pointer: PointerState;
 }
 
-const ACTION_KEYS: Record<string, InputAction> = {
-  ArrowLeft: 'left',
-  ArrowRight: 'right',
-  ArrowUp: 'up',
-  ArrowDown: 'down',
-  a: 'left',
-  d: 'right',
-  w: 'up',
-  s: 'down',
-  Enter: 'confirm',
-  ' ': 'confirm',
-  Escape: 'cancel',
+/** Bindable game actions that feed the per-frame snapshot. */
+const BOUND_TO_INPUT: Partial<Record<BindableAction, InputAction>> = {
+  moveUp: 'up',
+  moveDown: 'down',
+  moveLeft: 'left',
+  moveRight: 'right',
+  attack: 'confirm',
 };
+
+/** Resolve a key event to an InputAction using the live key bindings. */
+function inputActionFor(event: KeyboardEvent): InputAction | undefined {
+  if (event.code === 'Escape' || event.key === 'Escape') return 'cancel';
+  for (const bound of actionsForCode(getSettings().keyBindings, event.code)) {
+    const action = BOUND_TO_INPUT[bound];
+    if (action) return action;
+  }
+  return undefined;
+}
 
 function createEmptyActions(): Record<InputAction, boolean> {
   return {
@@ -51,6 +58,43 @@ function createEmptyActions(): Record<InputAction, boolean> {
     cancel: false,
     tap: false,
   };
+}
+
+/** Normalized analog joystick output. y = +1 means pushed up (forward). */
+export interface JoystickVector {
+  x: number;
+  y: number;
+}
+
+/** Fraction of the stick radius treated as dead zone around the center. */
+export const JOYSTICK_DEAD_ZONE = 0.12;
+
+/**
+ * Converts a pointer offset (px) from the joystick center into a normalized
+ * analog vector. Magnitude is 0 inside the dead zone, scales linearly up to
+ * the radius, and clamps to 1 beyond it so diagonal pushes never exceed a
+ * unit vector.
+ */
+export function computeJoystickVector(
+  dx: number,
+  dy: number,
+  radius: number,
+  deadZone: number = JOYSTICK_DEAD_ZONE,
+): JoystickVector {
+  if (!(radius > 0)) return {x: 0, y: 0};
+  const nx = dx / radius;
+  // Screen Y grows downward; joystick "up" must map to forward (+y).
+  const ny = -dy / radius;
+  const magnitude = Math.hypot(nx, ny);
+  if (magnitude === 0 || magnitude <= deadZone) return {x: 0, y: 0};
+  const clamped = Math.min(1, magnitude);
+  return {x: (nx / magnitude) * clamped, y: (ny / magnitude) * clamped};
+}
+
+/** Zeroes a joystick vector in place (used by every reset path). */
+export function resetJoystickVector(target: JoystickVector): void {
+  target.x = 0;
+  target.y = 0;
 }
 
 /**
@@ -104,13 +148,13 @@ export function useInput(
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      const action = ACTION_KEYS[event.key];
+      const action = inputActionFor(event);
       if (!action) return;
       inputRef.current.actions[action] = true;
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
-      const action = ACTION_KEYS[event.key];
+      const action = inputActionFor(event);
       if (!action) return;
       inputRef.current.actions[action] = false;
     };
