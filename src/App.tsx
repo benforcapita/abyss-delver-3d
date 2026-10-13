@@ -51,6 +51,7 @@ import {
 import {sdk, useGameLifecycle} from './platform/lifecycle';
 import {getSettings, saveSettings, subscribeSettings} from './platform/settings';
 import {actionsForCode, type BindableAction} from './platform/keybindings';
+import {controlHints} from './controlHints';
 import {SettingsPanel} from './components/SettingsPanel';
 import {FINAL_FLOOR, floorClearScore, isVictory, victoryBonus} from './rules';
 import {loadBest, saveBest, type BestScore} from './bestScore';
@@ -174,6 +175,9 @@ export default function App() {
     howToOpen: isHowToPlayOpen,
     floorSummaryOpen: showFloorSummary,
   });
+
+  // Live key-hint labels; `settings` is kept fresh via subscribeSettings above.
+  const hints = controlHints(settings.keyBindings);
 
   // Action refs triggered from UI & mobile controls
   const triggerAttackRef = useRef(false);
@@ -684,7 +688,11 @@ export default function App() {
                     <div className="text-[10px] font-black">
                       ELIXIR ({playerStats.potions})
                     </div>
-                    <div className="text-[9px] text-red-300">Key: Q / 1</div>
+                    <div
+                      className="text-[9px] text-red-300"
+                      data-testid="elixir-key">
+                      Key: {hints.potion}
+                    </div>
                   </div>
                 </button>
                 </div>
@@ -692,12 +700,20 @@ export default function App() {
 
               {/* Desktop Key Controls Helper */}
               {!isMobile && (
-                <div className="bg-black/60 backdrop-blur border border-zinc-800/80 px-3 py-1.5 rounded-lg text-[10px] text-zinc-400">
-                  <span className="text-amber-400 font-bold">WASD</span> Move ·{' '}
-                  <span className="text-amber-400 font-bold">LMB</span> Slash ·{' '}
-                  <span className="text-sky-400 font-bold">2/F</span> Fireball ·{' '}
-                  <span className="text-emerald-400 font-bold">Space/Shift</span>{' '}
-                  Dash · <span className="text-yellow-400 font-bold">E</span>{' '}
+                <div
+                  data-testid="key-hints"
+                  className="bg-black/60 backdrop-blur border border-zinc-800/80 px-3 py-1.5 rounded-lg text-[10px] text-zinc-400">
+                  <span className="text-amber-400 font-bold">{hints.move}</span>{' '}
+                  Move ·{' '}
+                  <span className="text-amber-400 font-bold">{hints.attack}</span>{' '}
+                  Slash ·{' '}
+                  <span className="text-sky-400 font-bold">{hints.spell}</span>{' '}
+                  Fireball ·{' '}
+                  <span className="text-emerald-400 font-bold">{hints.dash}</span>{' '}
+                  Dash ·{' '}
+                  <span className="text-yellow-400 font-bold">
+                    {hints.interact}
+                  </span>{' '}
                   Interact
                 </div>
               )}
