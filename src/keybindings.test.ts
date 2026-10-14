@@ -24,6 +24,7 @@ describe('keybindings', () => {
     expect(D).toEqual({
       moveUp: 'KeyW', moveDown: 'KeyS', moveLeft: 'KeyA', moveRight: 'KeyD',
       attack: 'Mouse0', potion: 'Digit1', spell: 'Digit2', interact: 'KeyE', dash: 'Space',
+      inventory: 'KeyI',
     });
     expect(BINDABLE_ACTIONS).not.toContain('item3');
     expect(valid(D)).toBe(true);

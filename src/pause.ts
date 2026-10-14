@@ -9,6 +9,7 @@ export interface PauseState {
   menuOpen: boolean;
   howToOpen: boolean;
   floorSummaryOpen: boolean;
+  inventoryOpen?: boolean;
 }
 
 /**
@@ -19,12 +20,14 @@ export function isGamePaused(s: {
   menuOpen: boolean;
   howToOpen: boolean;
   floorSummaryOpen: boolean;
+  inventoryOpen?: boolean;
 }): boolean {
   return (
     s.status !== 'PLAYING' ||
     s.menuOpen ||
     s.howToOpen ||
-    s.floorSummaryOpen
+    s.floorSummaryOpen ||
+    !!s.inventoryOpen
   );
 }
 

@@ -168,6 +168,8 @@ export interface PlayerStats {
   equippedWeapon: LootItem;
   equippedArmor: LootItem;
   equippedRing: LootItem;
+  /** Unequipped gear carried in the bag (see inventory.ts). */
+  inventory: LootItem[];
   baseAttack: number;
   baseDefense: number;
   baseSpeed: number;

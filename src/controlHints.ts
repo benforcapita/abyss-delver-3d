@@ -8,6 +8,7 @@ export interface ControlHints {
   dash: string;
   interact: string;
   potion: string;
+  inventory: string;
 }
 
 /**
@@ -26,5 +27,6 @@ export function controlHints(bindings: KeyBindings): ControlHints {
     dash: keyLabel(bindings.dash),
     interact: keyLabel(bindings.interact),
     potion: keyLabel(bindings.potion),
+    inventory: keyLabel(bindings.inventory),
   };
 }

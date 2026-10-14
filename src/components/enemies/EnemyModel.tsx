@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type {EnemyEntity} from '../../types';
 import {BossModel} from './BossModel';
 import {CultistModel} from './CultistModel';
+import {EnemyHealthBar} from './EnemyHealthBar';
 import {GEO, type AnimClock} from './shared';
 import {SkeletonModel} from './SkeletonModel';
 import {SlimeModel} from './SlimeModel';
@@ -30,15 +31,19 @@ export const EnemyModel = memo(function EnemyModel({enemy, clock, registerFlash}
         ? SlimeModel
         : SkeletonModel;
   return (
-    <group
-      ref={(node) => {
-        if (node) node.userData.adFlashId = enemy.id;
-        registerFlash(enemy.id, node);
-      }}>
-      <Model enemy={enemy} clock={clock}>
-        {!enemy.isBoss && ring}
-      </Model>
-    </group>
+    <>
+      <group
+        ref={(node) => {
+          if (node) node.userData.adFlashId = enemy.id;
+          registerFlash(enemy.id, node);
+        }}>
+        <Model enemy={enemy} clock={clock}>
+          {!enemy.isBoss && ring}
+        </Model>
+      </group>
+      {/* Outside the flash group so hit flash doesn't tint the bar white. */}
+      <EnemyHealthBar enemy={enemy} clock={clock} />
+    </>
   );
 });
 

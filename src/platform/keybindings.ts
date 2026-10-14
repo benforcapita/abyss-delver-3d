@@ -19,6 +19,7 @@ export const BINDABLE_ACTIONS = [
   'spell',
   'interact',
   'dash',
+  'inventory',
 ] as const;
 
 export type BindableAction = (typeof BINDABLE_ACTIONS)[number];
@@ -34,6 +35,7 @@ export const ACTION_LABELS: Record<BindableAction, string> = {
   spell: 'Fireball (slot 2)',
   interact: 'Interact',
   dash: 'Dash',
+  inventory: 'Inventory',
 };
 
 export const DEFAULT_KEY_BINDINGS: Readonly<KeyBindings> = Object.freeze({
@@ -46,6 +48,7 @@ export const DEFAULT_KEY_BINDINGS: Readonly<KeyBindings> = Object.freeze({
   spell: 'Digit2',
   interact: 'KeyE',
   dash: 'Space',
+  inventory: 'KeyI',
 });
 
 /**

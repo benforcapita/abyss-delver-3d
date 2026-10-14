@@ -15,5 +15,7 @@
   chase/attack while they can see the player.
 - Enemy/boss models are in `src/components/enemies/`; they are memoized and animated imperatively in
   `useFrame` (never re-rendered per frame). Hit flash tints materials, so materials are per instance.
+- Gear rules (auto-equip, bag, swapping, derived crit/life steal/max HP) are pure functions in
+  `inventory.ts`; the bag is `PlayerStats.inventory` and the UI is `components/InventoryPanel.tsx`.
 - Avoid per-frame React state updates in the game loop (cooldowns are refs; HUD stats sync at 20 Hz),
   and avoid mounting/unmounting lights at runtime (changes light count → every shader recompiles).

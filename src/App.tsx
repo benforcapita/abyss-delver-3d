@@ -3,6 +3,7 @@
 import {
   Activity,
   Award,
+  Backpack,
   BookOpen,
   ChevronRight,
   Flame,
@@ -55,6 +56,8 @@ import {actionsForCode, type BindableAction} from './platform/keybindings';
 import {markTouchAim} from './softLock';
 import {controlHints} from './controlHints';
 import {SettingsPanel} from './components/SettingsPanel';
+import {InventoryPanel} from './components/InventoryPanel';
+import {discardFromBag, equipFromBag, pickUpLoot, withDerivedStats, type LootOutcome} from './inventory';
 import {FINAL_FLOOR, floorClearScore, isVictory, victoryBonus} from './rules';
 import {loadBest, saveBest, type BestScore} from './bestScore';
 import {isGamePaused} from './pause';
@@ -113,6 +116,38 @@ const DEFAULT_RING: LootItem = {
   lifeSteal: 0,
 };
 
+function createInitialStats(): PlayerStats {
+  return withDerivedStats(
+    {
+      hp: getConfig('playerMaxHp'),
+      maxHp: getConfig('playerMaxHp'),
+      mana: getConfig('playerMaxMana'),
+      maxMana: getConfig('playerMaxMana'),
+      stamina: 100,
+      maxStamina: 100,
+      gold: 0,
+      potions: 3,
+      keys: 1,
+      equippedWeapon: DEFAULT_WEAPON,
+      equippedArmor: DEFAULT_ARMOR,
+      equippedRing: DEFAULT_RING,
+      inventory: [],
+      baseAttack: 0,
+      baseDefense: 0,
+      baseSpeed: 0,
+      critChance: 0.1,
+      lifeSteal: 0,
+      dashCooldown: 0,
+      invulnerableTime: 0,
+      attackCooldown: 0,
+      spellCooldown: 0,
+      swingAnim: 0,
+      castAnim: 0,
+    },
+    getConfig('playerMaxHp'),
+  );
+}
+
 export default function App() {
   const isMobile = useIsMobile();
   const debugEnabled = useMemo(
@@ -135,6 +170,7 @@ export default function App() {
   const [isGameMenuOpen, setIsGameMenuOpen] = useState(false);
   const [isHowToPlayOpen, setIsHowToPlayOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isInventoryOpen, setIsInventoryOpen] = useState(false);
   const [settings, setSettings] = useState(getSettings);
   useEffect(() => subscribeSettings(setSettings), []);
   // SFX volume is applied live to the procedural WebAudio master.
@@ -158,34 +194,12 @@ export default function App() {
   }, []);
 
   // Player RPG stats
-  const [playerStats, setPlayerStats] = useState<PlayerStats>({
-    hp: getConfig('playerMaxHp'),
-    maxHp: getConfig('playerMaxHp'),
-    mana: getConfig('playerMaxMana'),
-    maxMana: getConfig('playerMaxMana'),
-    stamina: 100,
-    maxStamina: 100,
-    gold: 0,
-    potions: 3,
-    keys: 1,
-    equippedWeapon: DEFAULT_WEAPON,
-    equippedArmor: DEFAULT_ARMOR,
-    equippedRing: DEFAULT_RING,
-    baseAttack: 0,
-    baseDefense: 0,
-    baseSpeed: 0,
-    critChance: 0.1,
-    lifeSteal: 0,
-    dashCooldown: 0,
-    invulnerableTime: 0,
-    attackCooldown: 0,
-    spellCooldown: 0,
-    swingAnim: 0,
-    castAnim: 0,
-  });
+  const [playerStats, setPlayerStats] = useState<PlayerStats>(createInitialStats);
+  const playerStatsRef = useRef(playerStats);
+  playerStatsRef.current = playerStats;
 
   // Loot popup notification
-  const [recentLoot, setRecentLoot] = useState<LootItem | null>(null);
+  const [recentLoot, setRecentLoot] = useState<{item: LootItem; outcome: LootOutcome} | null>(null);
   const lootTimeoutRef = useRef<any>(null);
 
   // Floor transition modal
@@ -201,6 +215,7 @@ export default function App() {
     menuOpen: isGameMenuOpen,
     howToOpen: isHowToPlayOpen,
     floorSummaryOpen: showFloorSummary,
+    inventoryOpen: isInventoryOpen,
   });
 
   // Live key-hint labels; `settings` is kept fresh via subscribeSettings above.
@@ -212,6 +227,7 @@ export default function App() {
     !pointerLocked &&
     !isGameMenuOpen &&
     !isHowToPlayOpen &&
+    !isInventoryOpen &&
     !showFloorSummary;
 
   const vignetteRef = useRef<HTMLDivElement>(null);
@@ -321,7 +337,14 @@ export default function App() {
       }
     };
 
+    const isInventoryKey = (code: string) =>
+      actionsForCode(getSettings().keyBindings, code).includes('inventory');
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isInventoryOpen) {
+        if (e.key === 'Escape' || isInventoryKey(e.code)) setIsInventoryOpen(false);
+        return;
+      }
       if (e.key === 'Escape') {
         if (isHowToPlayOpen) {
           setIsHowToPlayOpen(false);
@@ -335,7 +358,8 @@ export default function App() {
       if (gameState.status === 'PLAYING' && !isGameMenuOpen && !isHowToPlayOpen) {
         // Attack itself is read from the input snapshot in Game.
         for (const action of actionsForCode(getSettings().keyBindings, e.code)) {
-          dispatchBoundAction(action);
+          if (action === 'inventory') openInventory();
+          else dispatchBoundAction(action);
         }
       }
     };
@@ -344,7 +368,7 @@ export default function App() {
       if (e.button !== 0) return;
       // Pointer-lock click guard (minimal; duplicates #34, drop whichever merges second).
       if (!document.pointerLockElement) return;
-      if (gameState.status === 'PLAYING' && !isGameMenuOpen && !isHowToPlayOpen) {
+      if (gameState.status === 'PLAYING' && !isGameMenuOpen && !isHowToPlayOpen && !isInventoryOpen) {
         for (const action of actionsForCode(getSettings().keyBindings, 'Mouse0')) {
           dispatchBoundAction(action);
         }
@@ -357,7 +381,7 @@ export default function App() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('mousedown', handleMouseDown);
     };
-  }, [gameState.status, isGameMenuOpen, isHowToPlayOpen, playerStats.potions]);
+  }, [gameState.status, isGameMenuOpen, isHowToPlayOpen, isInventoryOpen, playerStats.potions]);
 
   // Potion Drinking Handler
   const drinkPotion = () => {
@@ -372,45 +396,38 @@ export default function App() {
     }
   };
 
-  // Loot Found Callback (Auto-equip if superior or update stats)
+  // Loot Found Callback: auto-equip if superior, otherwise store in the bag (see inventory.ts)
   const handleLootFound = useCallback((item: LootItem) => {
-    setRecentLoot(item);
+    // Outcome for the toast is predicted from the latest committed stats; the
+    // authoritative update below goes through the state updater.
+    const {outcome} = pickUpLoot(playerStatsRef.current, item, getConfig('playerMaxHp'));
+    setRecentLoot({item, outcome});
     if (lootTimeoutRef.current) clearTimeout(lootTimeoutRef.current);
     lootTimeoutRef.current = setTimeout(() => {
       setRecentLoot(null);
     }, 3500);
 
-    setPlayerStats((prev) => {
-      let updated = {...prev};
-      if (item.type === 'weapon') {
-        const curDmg = prev.equippedWeapon.damage || 0;
-        if ((item.damage || 0) >= curDmg) {
-          updated.equippedWeapon = item;
-          updated.critChance = 0.05 + (item.critChance || 0);
-          updated.lifeSteal = item.lifeSteal || 0;
-        }
-      } else if (item.type === 'armor') {
-        const curDef = prev.equippedArmor.defense || 0;
-        if ((item.defense || 0) >= curDef) {
-          updated.equippedArmor = item;
-          updated.maxHp =
-            getConfig('playerMaxHp') + (item.maxHpBonus || 0);
-          updated.hp = Math.min(updated.maxHp, prev.hp + (item.maxHpBonus || 0));
-        }
-      } else if (item.type === 'ring') {
-        updated.equippedRing = item;
-      } else if (item.type === 'potion') {
-        updated.potions = Math.min(9, prev.potions + 1);
-        if (item.healAmount) {
-          updated.hp = Math.min(prev.maxHp, prev.hp + item.healAmount);
-        }
-        if (item.manaAmount) {
-          updated.mana = Math.min(prev.maxMana, prev.mana + item.manaAmount);
-        }
-      }
-      return updated;
-    });
+    setPlayerStats((prev) => pickUpLoot(prev, item, getConfig('playerMaxHp')).stats);
   }, []);
+
+  const openInventory = () => {
+    if (document.pointerLockElement) document.exitPointerLock?.();
+    setIsInventoryOpen(true);
+  };
+
+  const handleEquip = useCallback((itemId: string) => {
+    gameAudio.playCoinPickup();
+    setPlayerStats((prev) => equipFromBag(prev, itemId, getConfig('playerMaxHp')));
+  }, []);
+
+  const handleDiscard = useCallback((itemId: string) => {
+    setPlayerStats((prev) => discardFromBag(prev, itemId));
+  }, []);
+
+  // The bag closes whenever the run leaves active play (game over, victory, menus).
+  useEffect(() => {
+    if (gameState.status !== 'PLAYING') setIsInventoryOpen(false);
+  }, [gameState.status]);
 
   const handleBossDefeated = useCallback(() => {
     setBossDefeated(true);
@@ -460,33 +477,10 @@ export default function App() {
       score: 0,
       level: 1,
     });
-    setPlayerStats({
-      hp: getConfig('playerMaxHp'),
-      maxHp: getConfig('playerMaxHp'),
-      mana: getConfig('playerMaxMana'),
-      maxMana: getConfig('playerMaxMana'),
-      stamina: 100,
-      maxStamina: 100,
-      gold: 0,
-      potions: 3,
-      keys: 1,
-      equippedWeapon: DEFAULT_WEAPON,
-      equippedArmor: DEFAULT_ARMOR,
-      equippedRing: DEFAULT_RING,
-      baseAttack: 0,
-      baseDefense: 0,
-      baseSpeed: 0,
-      critChance: 0.1,
-      lifeSteal: 0,
-      dashCooldown: 0,
-      invulnerableTime: 0,
-      attackCooldown: 0,
-      spellCooldown: 0,
-      swingAnim: 0,
-      castAnim: 0,
-    });
+    setPlayerStats(createInitialStats());
     setIsGameMenuOpen(false);
     setIsHowToPlayOpen(false);
+    setIsInventoryOpen(false);
     setShowFloorSummary(false);
     setBossDefeated(false);
     setVictoryBonusAmount(0);
@@ -625,7 +619,21 @@ export default function App() {
 
               {/* TOP RIGHT: menu, then the minimap in its own slot under it */}
               <div className="flex shrink-0 flex-col items-end gap-1.5">
-                <div className="pointer-events-auto">
+                <div className="pointer-events-auto flex gap-1.5">
+                  <button
+                    onClick={openInventory}
+                    data-testid="hud-inventory"
+                    data-layout-obstacle="true"
+                    title={`Inventory (${hints.inventory})`}
+                    className="relative bg-black/80 hover:bg-zinc-800 active:scale-95 text-amber-400 border border-amber-500/50 px-3 py-1.5 rounded-lg font-bold text-xs md:text-sm flex items-center gap-1.5 shadow-xl transition-all">
+                    <Backpack className="w-4 h-4" />
+                    <span>BAG</span>
+                    {playerStats.inventory.length > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-amber-500 text-black text-[9px] font-black flex items-center justify-center">
+                        {playerStats.inventory.length}
+                      </span>
+                    )}
+                  </button>
                   <button
                     onClick={() => setIsGameMenuOpen(true)}
                     data-testid="hud-menu"
@@ -672,18 +680,36 @@ export default function App() {
 
             {/* Recent Loot Toast Notification */}
             {recentLoot && (
-              <div className="self-center bg-black/90 backdrop-blur border-2 border-amber-500 px-4 py-2 rounded-xl flex items-center gap-3 shadow-2xl animate-bounce pointer-events-auto">
+              <div
+                data-testid="loot-toast"
+                className="self-center bg-black/90 backdrop-blur border-2 border-amber-500 px-4 py-2 rounded-xl flex items-center gap-3 shadow-2xl animate-bounce pointer-events-auto">
                 <Award className="w-5 h-5 text-amber-400" />
                 <div>
                   <div className="text-[10px] uppercase font-bold text-amber-400">
-                    Discovered {recentLoot.rarity} Item
+                    Discovered {recentLoot.item.rarity} Item
                   </div>
                   <div className="text-xs md:text-sm font-black text-white">
-                    {recentLoot.name}
+                    {recentLoot.item.name}
                   </div>
                   <div className="text-[10px] text-zinc-300">
-                    {recentLoot.description}
+                    {recentLoot.item.description}
                   </div>
+                  {recentLoot.outcome !== 'consumed' && (
+                    <div
+                      className={`text-[10px] font-bold ${
+                        recentLoot.outcome === 'equipped'
+                          ? 'text-emerald-400'
+                          : recentLoot.outcome === 'stored'
+                            ? 'text-sky-300'
+                            : 'text-red-400'
+                      }`}>
+                      {recentLoot.outcome === 'equipped'
+                        ? 'Equipped! Old gear moved to your bag.'
+                        : recentLoot.outcome === 'stored'
+                          ? `Added to bag — press ${hints.inventory} to equip`
+                          : 'Bag full — item left behind'}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -824,11 +850,24 @@ export default function App() {
                   <span className="text-yellow-400 font-bold">
                     {hints.interact}
                   </span>{' '}
-                  Interact
+                  Interact ·{' '}
+                  <span className="text-amber-400 font-bold">{hints.inventory}</span>{' '}
+                  Bag
                 </div>
               )}
             </div>
           </div>
+        )}
+
+        {/* Inventory / Equipment (pauses the game) */}
+        {isInventoryOpen && gameState.status === 'PLAYING' && (
+          <InventoryPanel
+            stats={playerStats}
+            onEquip={handleEquip}
+            onDiscard={handleDiscard}
+            onClose={() => setIsInventoryOpen(false)}
+            toggleKey={hints.inventory}
+          />
         )}
 
         {/* Pointer Lock Hint */}

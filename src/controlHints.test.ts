@@ -16,6 +16,7 @@ describe('controlHints', () => {
       dash: 'Space',
       interact: 'E',
       potion: '1',
+      inventory: 'I',
     });
   });
 
