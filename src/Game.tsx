@@ -3,7 +3,7 @@
 import {Canvas, useFrame, useThree} from '@react-three/fiber';
 import {Bloom, EffectComposer} from '@react-three/postprocessing';
 import type {MutableRefObject} from 'react';
-import React, {Suspense, useEffect, useMemo, useRef, useState} from 'react';
+import React, {Suspense, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import * as THREE from 'three';
 import {
   advanceTelegraph,
@@ -13,7 +13,13 @@ import {
   startTelegraph,
   usesGroundTelegraph,
 } from './bossTelegraph';
-import {BossTelegraph} from './components/BossTelegraph';
+import {LiveBossTelegraph} from './components/BossTelegraph';
+import {DungeonLevel} from './components/DungeonLevel';
+import {EnemyModel} from './components/enemies/EnemyModel';
+import {createAnimClock} from './components/enemies/shared';
+import {alertTo, perceive} from './enemyPerception';
+import {isWalkableWorld, moveWithCollision} from './navigation';
+import {angleDiff} from './softLock';
 import {getTouchLookSensitivity} from './platform/settings';
 import {takeTouchAimYaw} from './softLock';
 import {cameraMoveVector} from './cameraBasis';
@@ -86,94 +92,24 @@ interface GameProps {
 const scratchVec1 = new THREE.Vector3();
 const scratchVec2 = new THREE.Vector3();
 const forwardVec = new THREE.Vector3();
-const rightVec = new THREE.Vector3();
-const cameraRay = new THREE.Ray();
 
-// Procedural Cobblestone Texture Generator
-function createDungeonCobblestoneTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    ctx.fillStyle = '#1e1e24';
-    ctx.fillRect(0, 0, 512, 512);
+/** Player body half-extent used for wall collision (keeps the camera out of walls). */
+const PLAYER_RADIUS = 0.4;
+/** A press during the attack cooldown is remembered this long and fires as soon as it ends. */
+const ATTACK_BUFFER_S = 0.2;
+/** Regen/cooldown HUD state is pushed to React at this rate instead of every frame. */
+const STATS_SYNC_S = 1 / 20;
+/** Max enemy turn speed (rad/s) so heads and bodies swing round smoothly. */
+const ENEMY_TURN_RATE = 9;
+/** Idle enemies slowly scan left/right (rad/s amplitude). */
+const IDLE_SCAN_RATE = 0.35;
 
-    // Stone tiles
-    const rows = 16;
-    const cols = 16;
-    const tileW = 512 / cols;
-    const tileH = 512 / rows;
+const projectileGeo = new THREE.SphereGeometry(1, 14, 10);
+const sparkGeo = new THREE.SphereGeometry(1, 6, 5);
 
-    for (let r = 0; r < rows; r++) {
-      const offsetX = (r % 2) * (tileW / 2);
-      for (let c = -1; c < cols + 1; c++) {
-        const x = c * tileW + offsetX + 2;
-        const y = r * tileH + 2;
-        const shade = Math.floor(35 + Math.random() * 25);
-        ctx.fillStyle = `rgb(${shade}, ${shade + 2}, ${shade + 5})`;
-        ctx.fillRect(x, y, tileW - 4, tileH - 4);
-
-        // Edge highlights
-        ctx.strokeStyle = `rgba(255, 255, 255, 0.08)`;
-        ctx.strokeRect(x, y, tileW - 4, tileH - 4);
-
-        // Cracks & noise
-        for (let n = 0; n < 4; n++) {
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-          ctx.fillRect(
-            x + Math.random() * (tileW - 8),
-            y + Math.random() * (tileH - 8),
-            Math.random() * 6,
-            Math.random() * 6,
-          );
-        }
-      }
-    }
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(12, 12);
-  return texture;
-}
-
-// Procedural Wall Brick Texture Generator
-function createDungeonWallTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    ctx.fillStyle = '#14141a';
-    ctx.fillRect(0, 0, 512, 512);
-
-    const rows = 12;
-    const cols = 8;
-    const tileW = 512 / cols;
-    const tileH = 512 / rows;
-
-    for (let r = 0; r < rows; r++) {
-      const offsetX = (r % 2) * (tileW / 2);
-      for (let c = -1; c < cols + 1; c++) {
-        const x = c * tileW + offsetX + 3;
-        const y = r * tileH + 3;
-        const shade = Math.floor(40 + Math.random() * 30);
-        ctx.fillStyle = `rgb(${shade + 5}, ${shade}, ${shade - 5})`;
-        ctx.fillRect(x, y, tileW - 6, tileH - 6);
-
-        // Mortar lines
-        ctx.strokeStyle = '#0a0a0d';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x, y, tileW - 6, tileH - 6);
-      }
-    }
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(6, 6);
-  return texture;
+function turnToward(current: number, target: number, maxStep: number): number {
+  const d = angleDiff(target, current);
+  return current + Math.max(-maxStep, Math.min(maxStep, d));
 }
 
 /** Inner Scene Component handling Camera, Combat, Entities, Lighting, and FX */
@@ -201,10 +137,6 @@ function DungeonScene({
   minimapBridgeRef,
 }: GameProps & {inputRef: MutableRefObject<InputSnapshot>}): React.ReactElement {
   const {camera, gl} = useThree();
-
-  // Textures
-  const floorTexture = useMemo(() => createDungeonCobblestoneTexture(), []);
-  const wallTexture = useMemo(() => createDungeonWallTexture(), []);
 
   // Floor and mob data
   const floorLevel = gameState.level;
@@ -257,7 +189,22 @@ function DungeonScene({
   const hitFlashes = useRef(createFlashMap());
   const lastFxNow = useRef(0);
   const flashTargets = useRef(new Map<string, THREE.Object3D>());
+  const registerFlash = useCallback((id: string, node: THREE.Object3D | null) => {
+    if (node) flashTargets.current.set(id, node);
+    else flashTargets.current.delete(id);
+  }, []);
   const lastFootstepDist = useRef(0);
+  const torchLightRef = useRef<THREE.PointLight>(null);
+  /** Frame clock for enemy animation; frozen by pause and hit-stop. */
+  const animClock = useRef(createAnimClock()).current;
+  /**
+   * Authoritative cooldowns, ticked every frame. Gating actions on these
+   * (rather than on React state) keeps input response frame-exact while the
+   * HUD copy in playerStats is only synced at STATS_SYNC_S.
+   */
+  const cooldowns = useRef({attack: 0, spell: 0, dash: 0, invul: 0});
+  const attackBuffer = useRef(0);
+  const statsSyncTimer = useRef(0);
 
   // Weapon Viewmodel Swing Animation Ref
   const viewmodelRef = useRef<THREE.Group>(null);
@@ -345,7 +292,14 @@ function DungeonScene({
 
     const handleCanvasClick = () => {
       if (gameState.status === 'PLAYING' && document.pointerLockElement !== gl.domElement) {
-        gl.domElement.requestPointerLock?.();
+        // Raw mouse deltas (no OS acceleration/smoothing) where supported, for the most direct aim.
+        const el = gl.domElement;
+        const fallback = () => Promise.resolve(el.requestPointerLock?.()).catch(() => {});
+        try {
+          Promise.resolve(el.requestPointerLock?.({unadjustedMovement: true})).catch(fallback);
+        } catch {
+          void fallback();
+        }
       }
     };
 
@@ -395,16 +349,17 @@ function DungeonScene({
   // Player Melee Sword Strike
   const confirmHeldRef = useRef(false);
   const executeAttack = () => {
-    if (playerStats.attackCooldown > 0) return;
+    if (cooldowns.current.attack > 0) {
+      attackBuffer.current = ATTACK_BUFFER_S;
+      return;
+    }
+    attackBuffer.current = 0;
+    cooldowns.current.attack = 0.35;
     onOnboardingEvent?.({type: 'attack'});
     window.dispatchEvent(new CustomEvent('player-attack')); // Lightweight hook used by e2e to count attacks
     swingProgress.current = 1.0;
+    castProgress.current = 0;
     gameAudio.playSwordClash();
-
-    setPlayerStats((prev) => ({
-      ...prev,
-      attackCooldown: 0.35,
-    }));
 
     // Check hit against enemies in front
     const pPos = playerPos.current;
@@ -432,6 +387,7 @@ function DungeonScene({
           enemy.hp -= dmg;
           enemy.state = 'hurt';
           enemy.stateTimer = 0.2;
+          alertTo(enemy, pPos.x, pPos.z);
           triggerHitFlash(hitFlashes.current, enemy.id, performance.now());
           triggerScreenShake(screenShake.current, outgoingShakeAmount(dmg, isCrit));
           if (isHeavyHit(dmg, isCrit)) triggerHitStop(hitStop.current);
@@ -465,19 +421,19 @@ function DungeonScene({
 
   // Player Magic Fireball Cast
   const executeSpell = () => {
-    if (playerStats.spellCooldown > 0 || playerStats.mana < 15) {
+    if (cooldowns.current.spell > 0 || playerStats.mana < 15) {
       if (playerStats.mana < 15) {
         gameAudio.playShieldBlock();
       }
       return;
     }
+    cooldowns.current.spell = 0.6;
     castProgress.current = 1.0;
     gameAudio.playArcadeLaser();
 
     setPlayerStats((prev) => ({
       ...prev,
       mana: Math.max(0, prev.mana - 15),
-      spellCooldown: 0.6,
     }));
 
     const pPos = playerPos.current;
@@ -538,15 +494,15 @@ function DungeonScene({
 
   // Player Evasion Dash
   const executeDash = () => {
-    if (playerStats.dashCooldown > 0 || playerStats.stamina < 20) return;
+    if (cooldowns.current.dash > 0 || playerStats.stamina < 20) return;
+    cooldowns.current.dash = 1.2;
+    cooldowns.current.invul = Math.max(cooldowns.current.invul, 0.35);
     onOnboardingEvent?.({type: 'dash'});
     gameAudio.playPowerupChime();
 
     setPlayerStats((prev) => ({
       ...prev,
       stamina: Math.max(0, prev.stamina - 20),
-      dashCooldown: 1.2,
-      invulnerableTime: 0.35,
     }));
 
     isDashing.current = true;
@@ -663,6 +619,9 @@ function DungeonScene({
       spawnFloatingText('Potion!', roomDrops[0].pos, '#22c55e');
     }
 
+    // Drop the dead enemy's model right away (it is otherwise hidden by its rig).
+    setEnemies([...enemiesRef.current]);
+
     if (enemy.isBoss) {
       setStairsUnlocked(true);
       spawnFloatingText('STAIRS TO NEXT FLOOR OPEN!', enemy.pos, '#10b981');
@@ -692,10 +651,23 @@ function DungeonScene({
       }
       stepScreenShake(screenShake.current, 0, {enabled: isScreenShakeEnabled(), paused: true});
       stepHitStop(hitStop.current, delta, paused);
+      animClock.dt = 0;
       return;
     }
     const dt = stepHitStop(hitStop.current, frameDelta(delta, wasPausedRef.current), paused).dt;
     wasPausedRef.current = false;
+    animClock.dt = dt;
+    animClock.t += dt;
+
+    const cd = cooldowns.current;
+    cd.attack = Math.max(0, cd.attack - dt);
+    cd.spell = Math.max(0, cd.spell - dt);
+    cd.dash = Math.max(0, cd.dash - dt);
+    cd.invul = Math.max(0, cd.invul - dt);
+    if (attackBuffer.current > 0) {
+      attackBuffer.current = Math.max(0, attackBuffer.current - dt);
+      if (cd.attack <= 0 && attackBuffer.current > 0) executeAttack();
+    }
 
     if (debugCheats.killBossRequested) {
       debugCheats.killBossRequested = false;
@@ -759,24 +731,36 @@ function DungeonScene({
     }
 
     // Update Player Cooldowns & Stats Regeneration
-    setPlayerStats((prev) => {
-      const newDashCd = Math.max(0, prev.dashCooldown - dt);
-      const newAttackCd = Math.max(0, prev.attackCooldown - dt);
-      const newSpellCd = Math.max(0, prev.spellCooldown - dt);
-      const newInvul = Math.max(0, prev.invulnerableTime - dt);
-      const newStamina = Math.min(prev.maxStamina, prev.stamina + 22 * dt);
-      const newMana = Math.min(prev.maxMana, prev.mana + 4 * dt);
-
-      return {
-        ...prev,
-        dashCooldown: newDashCd,
-        attackCooldown: newAttackCd,
-        spellCooldown: newSpellCd,
-        invulnerableTime: newInvul,
-        stamina: newStamina,
-        mana: newMana,
-      };
-    });
+    // Throttled: re-rendering the whole App (HUD + scene) every frame was the main source of jank.
+    statsSyncTimer.current += dt;
+    if (statsSyncTimer.current >= STATS_SYNC_S) {
+      const step = statsSyncTimer.current;
+      statsSyncTimer.current = 0;
+      const snap = {...cd};
+      setPlayerStats((prev) => {
+        const stamina = Math.min(prev.maxStamina, prev.stamina + 22 * step);
+        const mana = Math.min(prev.maxMana, prev.mana + 4 * step);
+        if (
+          stamina === prev.stamina &&
+          mana === prev.mana &&
+          snap.attack === prev.attackCooldown &&
+          snap.spell === prev.spellCooldown &&
+          snap.dash === prev.dashCooldown &&
+          snap.invul === prev.invulnerableTime
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          dashCooldown: snap.dash,
+          attackCooldown: snap.attack,
+          spellCooldown: snap.spell,
+          invulnerableTime: snap.invul,
+          stamina,
+          mana,
+        };
+      });
+    }
 
     // Player Movement Integration
     const pPos = playerPos.current;
@@ -801,67 +785,35 @@ function DungeonScene({
     const baseSpeed =
       getConfig('playerSpeed') + (playerStats.equippedRing.moveSpeedBonus || 0);
 
+    let stepX = 0;
+    let stepZ = 0;
     if (isDashing.current) {
       dashTimer.current -= dt;
       const dashSpeed = baseSpeed * 2.8;
-      pPos.x += dashDir.current.x * dashSpeed * dt;
-      pPos.z += dashDir.current.z * dashSpeed * dt;
+      stepX = dashDir.current.x * dashSpeed * dt;
+      stepZ = dashDir.current.z * dashSpeed * dt;
       if (dashTimer.current <= 0) {
         isDashing.current = false;
       }
     } else if (isMoving) {
       // Camera-relative: W toward where the camera looks (AD-24.10).
       const move = cameraMoveVector(moveX, moveZ, playerYaw.current);
-      const worldDx = move.x * baseSpeed * dt;
-      const worldDz = move.z * baseSpeed * dt;
-
-      // Wall collision check against grid
-      const TILE_SIZE = 4;
-      const targetX = pPos.x + worldDx;
-      const targetZ = pPos.z + worldDz;
-      const gridX = Math.floor(targetX / TILE_SIZE + floorData.gridSize / 2);
-      const gridZ = Math.floor(targetZ / TILE_SIZE + floorData.gridSize / 2);
-
-      const canMove =
-        gridX >= 0 &&
-        gridX < floorData.gridSize &&
-        gridZ >= 0 &&
-        gridZ < floorData.gridSize &&
-        floorData.tiles[gridX][gridZ] === 1;
-
-      if (canMove) {
-        pPos.x = targetX;
-        pPos.z = targetZ;
-      } else {
-        // Slide along axes
-        const gridXOnly = Math.floor(targetX / TILE_SIZE + floorData.gridSize / 2);
-        const curGridZ = Math.floor(pPos.z / TILE_SIZE + floorData.gridSize / 2);
-        if (
-          gridXOnly >= 0 &&
-          gridXOnly < floorData.gridSize &&
-          floorData.tiles[gridXOnly][curGridZ] === 1
-        ) {
-          pPos.x = targetX;
-        }
-
-        const curGridX = Math.floor(pPos.x / TILE_SIZE + floorData.gridSize / 2);
-        const gridZOnly = Math.floor(targetZ / TILE_SIZE + floorData.gridSize / 2);
-        if (
-          gridZOnly >= 0 &&
-          gridZOnly < floorData.gridSize &&
-          floorData.tiles[curGridX][gridZOnly] === 1
-        ) {
-          pPos.z = targetZ;
-        }
-      }
+      stepX = move.x * baseSpeed * dt;
+      stepZ = move.z * baseSpeed * dt;
 
       // Footstep sound & head bob
       headBob.current += dt * 12;
-      lastFootstepDist.current += Math.hypot(worldDx, worldDz);
+      lastFootstepDist.current += Math.hypot(stepX, stepZ);
       if (lastFootstepDist.current > 2.5) {
         gameAudio.playFootstepStone();
         lastFootstepDist.current = 0;
       }
+    }
+    if (stepX !== 0 || stepZ !== 0) {
+      // Wall collision with a body radius; slides along walls and never tunnels (dash included).
+      const next = moveWithCollision(floorData.tiles, pPos.x, pPos.z, stepX, stepZ, PLAYER_RADIUS);
+      pPos.x = next.x;
+      pPos.z = next.z;
     }
 
     if (interactAvailableRef) {
@@ -885,6 +837,7 @@ function DungeonScene({
     camera.rotation.order = 'YXZ';
     camera.rotation.y = playerYaw.current;
     camera.rotation.x = playerPitch.current;
+    torchLightRef.current?.position.set(pPos.x, pPos.y + 0.5, pPos.z);
 
     // First-person viewmodel animation
     if (viewmodelRef.current) {
@@ -918,48 +871,64 @@ function DungeonScene({
       trap.active = Math.sin(trap.timer * 2.5) > 0.3;
       if (trap.active) {
         scratchVec1.set(trap.pos[0], 0, trap.pos[2]);
-        if (pPos.distanceTo(scratchVec1) < 1.4 && playerStats.invulnerableTime <= 0) {
+        if (pPos.distanceTo(scratchVec1) < 1.4 && cd.invul <= 0) {
           applyPlayerDamage(trap.damage, 'Spike Trap');
         }
       }
     });
 
     // Update Enemies AI & Combat Loops
+    // Enemies only notice, chase and attack the player when they can SEE them
+    // (range + view cone + no wall in between). When sight is lost they walk to
+    // the last known position for a few seconds, then give up.
     let aliveCount = 0;
     let bossFound: EnemyEntity | null = null;
+    const tiles = floorData.tiles;
+    const allEnemies = enemiesRef.current;
 
-    enemiesRef.current.forEach((enemy) => {
+    allEnemies.forEach((enemy, idx) => {
       if (enemy.hp <= 0) return;
       aliveCount++;
       if (enemy.isBoss) bossFound = enemy;
 
-      scratchVec1.set(enemy.pos[0], enemy.pos[1], enemy.pos[2]);
+      const ex = enemy.pos[0];
+      const ez = enemy.pos[2];
+      scratchVec1.set(ex, enemy.pos[1], ez);
       const distToPlayer = pPos.distanceTo(scratchVec1);
-
-      // Look at player
-      const angleToPlayer = Math.atan2(
-        pPos.x - enemy.pos[0],
-        pPos.z - enemy.pos[2],
-      );
-      enemy.rotY = angleToPlayer;
+      const angleToPlayer = Math.atan2(pPos.x - ex, pPos.z - ez);
 
       // Clear a boss telegraph if the enemy was knocked out of windup (e.g. hurt)
       if (enemy.telegraph && enemy.state !== 'windup') {
         enemy.telegraph = undefined;
       }
 
-      // Enemy AI States
-      if (distToPlayer < 20.0) {
-        if (enemy.state === 'idle') {
-          enemy.state = 'chase';
-        }
+      const wasIdle = enemy.state === 'idle';
+      const sees = perceive(
+        enemy,
+        {x: ex, z: ez, yaw: enemy.rotY, alerted: !wasIdle},
+        pPos.x,
+        pPos.z,
+        tiles,
+        dt,
+      );
 
-        if (enemy.state === 'chase') {
+      let faceYaw: number | null = sees ? angleToPlayer : null;
+      let moveTarget: [number, number] | null = null;
+
+      if (enemy.state === 'idle') {
+        if (sees || (enemy.memory ?? 0) > 0) {
+          enemy.state = 'chase';
+          if (sees) spawnFloatingText('!', [ex, enemy.pos[1] + 1.2 * enemy.scale, ez], '#facc15', true);
+        } else {
+          // Idle guard slowly scans the room.
+          enemy.rotY += Math.sin(animClock.t * 0.6 + idx * 1.7) * IDLE_SCAN_RATE * dt;
+        }
+      }
+
+      if (enemy.state === 'chase') {
+        if (sees) {
           if (distToPlayer > enemy.attackRange) {
-            // Move toward player
-            const speed = enemy.moveSpeed * dt;
-            enemy.pos[0] += Math.sin(angleToPlayer) * speed;
-            enemy.pos[2] += Math.cos(angleToPlayer) * speed;
+            moveTarget = [pPos.x, pPos.z];
           } else {
             enemy.state = 'windup';
             const groundTelegraph = usesGroundTelegraph(
@@ -973,37 +942,49 @@ function DungeonScene({
               enemy.telegraph = startTelegraph(pPos.x, pPos.z);
             }
           }
-        } else if (enemy.state === 'windup') {
-          if (!paused) {
-            enemy.stateTimer -= dt;
-            enemy.telegraphTimer = enemy.stateTimer;
-          }
+        } else if ((enemy.memory ?? 0) > 0 && enemy.lastKnownPos) {
+          // Investigate where the player was last seen.
+          const [lx, lz] = enemy.lastKnownPos;
+          if (Math.hypot(lx - ex, lz - ez) < 0.6) enemy.memory = 0;
+          else moveTarget = [lx, lz];
+        } else {
+          enemy.state = 'idle';
+          enemy.lastKnownPos = undefined;
+        }
+      } else if (enemy.state === 'windup') {
+        // Lost sight mid-windup: abort (a boss slam already locked onto the ground still lands).
+        if (!sees && !enemy.telegraph) {
+          enemy.state = 'chase';
+          enemy.telegraphTimer = 0;
+          enemy.stateTimer = 0;
+        } else {
+          enemy.stateTimer -= dt;
+          enemy.telegraphTimer = enemy.stateTimer;
           if (enemy.telegraph) {
             enemy.telegraph = advanceTelegraph(enemy.telegraph, dt, paused);
           }
-          if (!paused && enemy.stateTimer <= 0) {
+          if (enemy.stateTimer <= 0) {
             enemy.state = 'attack';
             enemy.stateTimer = 0.3;
+            enemy.telegraphTimer = 0;
             const tel = enemy.telegraph;
             enemy.telegraph = undefined;
 
             // Execute attack
             if (enemy.archetype === 'cultist' || enemy.archetype === 'boss_crimson_archmage') {
-              // Ranged homing fireball
+              // Aimed fireball (only fired with the player in sight)
               gameAudio.playArcadeLaser();
-              const targetX = pPos.x;
-              const targetY = pPos.y;
-              const targetZ = pPos.z;
-              const dx = targetX - enemy.pos[0];
-              const dz = targetZ - enemy.pos[2];
+              const dx = pPos.x - ex;
+              const dz = pPos.z - ez;
               const len = Math.hypot(dx, dz) || 1;
               const spd = 10.0;
+              const spawnY = enemy.pos[1] + 0.5;
 
               const enemyProj: Projectile = {
                 id: `proj_e_${Date.now()}_${Math.random()}`,
                 isPlayer: false,
-                pos: [enemy.pos[0], enemy.pos[1] + 0.5, enemy.pos[2]],
-                velocity: [(dx / len) * spd, 0, (dz / len) * spd],
+                pos: [ex + (dx / len) * 0.6, spawnY, ez + (dz / len) * 0.6],
+                velocity: [(dx / len) * spd, ((pPos.y - spawnY) / len) * spd, (dz / len) * spd],
                 damage: enemy.attackPower,
                 isCrit: false,
                 radius: 0.5,
@@ -1013,27 +994,68 @@ function DungeonScene({
               };
               setProjectiles((prev) => [...prev, enemyProj]);
             } else {
-              // Melee Strike
+              // Melee Strike: needs the player in sight, or inside a visible boss slam ring
               const insideRing = tel
                 ? isInsideRing(pPos.x, pPos.z, tel.cx, tel.cz, tel.radius)
-                : true;
+                : sees;
               if (meleeHitLands(distToPlayer <= enemy.attackRange + 1.0, insideRing)) {
                 applyPlayerDamage(enemy.attackPower, enemy.name);
                 gameAudio.playMeleePunch();
               }
             }
           }
-        } else if (enemy.state === 'attack') {
-          enemy.stateTimer -= dt;
-          if (enemy.stateTimer <= 0) {
-            enemy.state = 'chase';
-          }
-        } else if (enemy.state === 'hurt') {
-          enemy.stateTimer -= dt;
-          if (enemy.stateTimer <= 0) {
-            enemy.state = 'chase';
-          }
         }
+      } else if (enemy.state === 'attack') {
+        enemy.stateTimer -= dt;
+        if (enemy.stateTimer <= 0) {
+          enemy.state = 'chase';
+        }
+      } else if (enemy.state === 'hurt') {
+        enemy.stateTimer -= dt;
+        if (enemy.stateTimer <= 0) {
+          enemy.state = 'chase';
+        }
+      }
+
+      // Locomotion: steer to the target, keep apart from other enemies, collide with walls.
+      if (moveTarget) {
+        let vx = moveTarget[0] - ex;
+        let vz = moveTarget[1] - ez;
+        const len = Math.hypot(vx, vz);
+        if (len > 0.01) {
+          vx /= len;
+          vz /= len;
+          let sepX = 0;
+          let sepZ = 0;
+          for (const other of allEnemies) {
+            if (other === enemy || other.hp <= 0) continue;
+            const ox = ex - other.pos[0];
+            const oz = ez - other.pos[2];
+            const minDist = 0.9 * (enemy.scale + other.scale);
+            const d = Math.hypot(ox, oz);
+            if (d > 0.001 && d < minDist) {
+              const push = (minDist - d) / minDist;
+              sepX += (ox / d) * push;
+              sepZ += (oz / d) * push;
+            }
+          }
+          vx += sepX * 1.5;
+          vz += sepZ * 1.5;
+          const vlen = Math.hypot(vx, vz);
+          if (vlen > 1) {
+            vx /= vlen;
+            vz /= vlen;
+          }
+          const step = enemy.moveSpeed * dt;
+          const next = moveWithCollision(tiles, ex, ez, vx * step, vz * step, 0.35 * enemy.scale);
+          enemy.pos[0] = next.x;
+          enemy.pos[2] = next.z;
+          if (faceYaw === null) faceYaw = Math.atan2(vx, vz);
+        }
+      }
+
+      if (faceYaw !== null) {
+        enemy.rotY = turnToward(enemy.rotY, faceYaw, ENEMY_TURN_RATE * dt);
       }
     });
 
@@ -1064,6 +1086,7 @@ function DungeonScene({
               enemy.hp -= dmg;
               enemy.state = 'hurt';
               enemy.stateTimer = 0.2;
+              alertTo(enemy, pPos.x, pPos.z);
               triggerHitFlash(hitFlashes.current, enemy.id, performance.now());
               triggerScreenShake(screenShake.current, outgoingShakeAmount(dmg, isCrit));
               if (isHeavyHit(dmg, isCrit)) triggerHitStop(hitStop.current);
@@ -1085,11 +1108,20 @@ function DungeonScene({
         } else {
           // Check collision with player
           scratchVec1.set(proj.pos[0], proj.pos[1], proj.pos[2]);
-          if (scratchVec1.distanceTo(pPos) < 1.2 && playerStats.invulnerableTime <= 0) {
+          if (scratchVec1.distanceTo(pPos) < 1.2 && cd.invul <= 0) {
             collided = true;
             applyPlayerDamage(proj.damage, 'Dark Magic');
             gameAudio.playShieldBlock();
           }
+        }
+
+        // Walls, floor and ceiling stop every projectile (no shots through walls).
+        if (
+          !collided &&
+          (!isWalkableWorld(tiles, proj.pos[0], proj.pos[2]) || proj.pos[1] < 0 || proj.pos[1] > 5)
+        ) {
+          collided = true;
+          spawnSparks(proj.pos, proj.color, 8);
         }
 
         if (!collided && proj.life < proj.maxLife) {
@@ -1145,6 +1177,7 @@ function DungeonScene({
     triggerHitFlash(hitFlashes.current, PLAYER_FLASH_ID, performance.now());
     triggerScreenShake(screenShake.current, playerHurtShake(finalDmg));
     if (isHeavyHit(finalDmg)) triggerHitStop(hitStop.current);
+    cooldowns.current.invul = 0.5;
 
     setPlayerStats((prev) => {
       const newHp = applyDamage(prev.hp, finalDmg, debugCheats.godMode);
@@ -1167,18 +1200,16 @@ function DungeonScene({
     );
   };
 
-  const TILE_SIZE = 4;
-  const halfGrid = floorData.gridSize / 2;
+  const weaponGlow = playerStats.equippedWeapon.glowColor || '#3b82f6';
+  const tierColor = (tier: ChestEntity['tier']) =>
+    tier === 'legendary' ? '#f59e0b' : tier === 'epic' ? '#a855f7' : '#3b82f6';
 
   return (
     <group>
-      {/* Player Torch Aura Light */}
+      {/* Player Torch Aura Light (moved every frame in the loop) */}
       <pointLight
-        position={[
-          playerPos.current.x,
-          playerPos.current.y + 0.5,
-          playerPos.current.z,
-        ]}
+        ref={torchLightRef}
+        position={[playerPos.current.x, playerPos.current.y + 0.5, playerPos.current.z]}
         intensity={35}
         distance={14}
         decay={1.2}
@@ -1193,27 +1224,59 @@ function DungeonScene({
           else flashTargets.current.delete(PLAYER_FLASH_ID);
         }}
         position={[0.35, -0.3, -0.6]}>
-        {/* Sword Blade */}
-        <mesh position={[0, 0.4, 0]} rotation={[0, 0, 0.1]}>
-          <boxGeometry args={[0.08, 0.7, 0.02]} />
-          <meshStandardMaterial
-            color="#e2e8f0"
-            metalness={0.9}
-            roughness={0.2}
-            emissive={playerStats.equippedWeapon.glowColor || '#3b82f6'}
-            emissiveIntensity={0.6}
-          />
-        </mesh>
-        {/* Sword Crossguard */}
-        <mesh position={[0, 0.08, 0]}>
-          <boxGeometry args={[0.26, 0.04, 0.06]} />
-          <meshStandardMaterial color="#f59e0b" metalness={0.8} roughness={0.3} />
-        </mesh>
-        {/* Sword Hilt */}
-        <mesh position={[0, -0.06, 0]}>
-          <cylinderGeometry args={[0.025, 0.025, 0.22, 8]} />
-          <meshStandardMaterial color="#78350f" roughness={0.8} />
-        </mesh>
+        <group position={[0.02, -0.04, 0]} rotation={[-0.6, 0.15, 0.12]} scale={0.8}>
+          {/* Blade */}
+          <mesh position={[0, 0.42, 0]}>
+            <boxGeometry args={[0.07, 0.64, 0.014]} />
+            <meshStandardMaterial color="#e2e8f0" metalness={0.95} roughness={0.18} />
+          </mesh>
+          {/* Glowing fuller */}
+          <mesh position={[0, 0.4, 0]}>
+            <boxGeometry args={[0.016, 0.56, 0.018]} />
+            <meshStandardMaterial color={weaponGlow} emissive={weaponGlow} emissiveIntensity={1.6} />
+          </mesh>
+          {/* Tip */}
+          <mesh position={[0, 0.8, 0]} rotation={[0, Math.PI / 4, 0]} scale={[1, 1, 0.2]}>
+            <coneGeometry args={[0.05, 0.14, 4]} />
+            <meshStandardMaterial color="#e2e8f0" metalness={0.95} roughness={0.18} />
+          </mesh>
+          {/* Crossguard */}
+          <mesh position={[0, 0.09, 0]}>
+            <boxGeometry args={[0.28, 0.035, 0.05]} />
+            <meshStandardMaterial color="#f59e0b" metalness={0.85} roughness={0.28} />
+          </mesh>
+          {[-0.14, 0.14].map((x) => (
+            <mesh key={x} position={[x, 0.09, 0]}>
+              <sphereGeometry args={[0.028, 10, 8]} />
+              <meshStandardMaterial color="#f59e0b" metalness={0.85} roughness={0.28} />
+            </mesh>
+          ))}
+          <mesh position={[0, 0.09, 0.03]}>
+            <octahedronGeometry args={[0.025]} />
+            <meshStandardMaterial color={weaponGlow} emissive={weaponGlow} emissiveIntensity={2} />
+          </mesh>
+          {/* Leather-wrapped grip with bands */}
+          <mesh position={[0, -0.04, 0]}>
+            <cylinderGeometry args={[0.024, 0.026, 0.2, 10]} />
+            <meshStandardMaterial color="#5b2e0e" roughness={0.85} />
+          </mesh>
+          {[0.03, -0.04, -0.11].map((y) => (
+            <mesh key={y} position={[0, y, 0]} rotation={[Math.PI / 2, 0, 0]}>
+              <torusGeometry args={[0.027, 0.005, 6, 14]} />
+              <meshStandardMaterial color="#b45309" metalness={0.8} roughness={0.3} />
+            </mesh>
+          ))}
+          {/* Pommel */}
+          <mesh position={[0, -0.16, 0]}>
+            <sphereGeometry args={[0.035, 12, 10]} />
+            <meshStandardMaterial color="#f59e0b" metalness={0.85} roughness={0.28} />
+          </mesh>
+          {/* Gauntlet */}
+          <mesh position={[0.005, -0.05, 0.01]} scale={[0.055, 0.07, 0.06]}>
+            <sphereGeometry args={[1, 14, 10]} />
+            <meshStandardMaterial color="#3b2a1f" metalness={0.2} roughness={0.85} />
+          </mesh>
+        </group>
         {/* Magic Aura Orb on Left Off-Hand */}
         <mesh position={[-0.7, -0.1, 0.1]}>
           <sphereGeometry args={[0.08, 16, 16]} />
@@ -1234,82 +1297,8 @@ function DungeonScene({
         />
       </group>
 
-      {/* Dungeon Floor Slabs */}
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, 0, 0]}
-        receiveShadow>
-        <planeGeometry args={[floorData.gridSize * TILE_SIZE, floorData.gridSize * TILE_SIZE]} />
-        <meshStandardMaterial
-          map={floorTexture}
-          roughness={0.85}
-          metalness={0.1}
-        />
-      </mesh>
-
-      {/* Dungeon Stone Walls */}
-      {floorData.tiles.map((row, gx) =>
-        row.map((cell, gy) => {
-          if (cell === 2) {
-            const wx = (gx - halfGrid) * TILE_SIZE;
-            const wz = (gy - halfGrid) * TILE_SIZE;
-            return (
-              <mesh
-                key={`wall_${gx}_${gy}`}
-                position={[wx, 2.5, wz]}
-                castShadow
-                receiveShadow>
-                <boxGeometry args={[TILE_SIZE, 5.0, TILE_SIZE]} />
-                <meshStandardMaterial
-                  map={wallTexture}
-                  roughness={0.9}
-                  metalness={0.1}
-                />
-              </mesh>
-            );
-          }
-          return null;
-        }),
-      )}
-
-      {/* Pillars */}
-      {floorData.pillars.map((pos, i) => (
-        <group key={`pillar_${i}`} position={[pos[0], 0, pos[2]]}>
-          <mesh position={[0, 2.5, 0]} castShadow receiveShadow>
-            <cylinderGeometry args={[0.5, 0.6, 5.0, 12]} />
-            <meshStandardMaterial color="#2d2d34" roughness={0.9} />
-          </mesh>
-          <mesh position={[0, 4.8, 0]} castShadow>
-            <boxGeometry args={[1.4, 0.4, 1.4]} />
-            <meshStandardMaterial color="#1e1e24" roughness={0.8} />
-          </mesh>
-        </group>
-      ))}
-
-      {/* Torches with Flickering Warm Lights */}
-      {floorData.torches.map((pos, i) => (
-        <group key={`torch_${i}`} position={pos}>
-          <mesh position={[0, 0, 0]}>
-            <cylinderGeometry args={[0.06, 0.04, 0.4, 8]} />
-            <meshStandardMaterial color="#78350f" roughness={0.9} />
-          </mesh>
-          <mesh position={[0, 0.22, 0]}>
-            <sphereGeometry args={[0.1, 8, 8]} />
-            <meshStandardMaterial
-              color="#f97316"
-              emissive="#ea580c"
-              emissiveIntensity={2.5}
-            />
-          </mesh>
-          <pointLight
-            position={[0, 0.3, 0]}
-            intensity={18}
-            distance={9}
-            decay={1.4}
-            color="#ff8c00"
-          />
-        </group>
-      ))}
+      {/* Floor, ceiling, walls, pillars, torches (memoized + instanced) */}
+      <DungeonLevel floorData={floorData} />
 
       {floatingTexts.map((ft) => (
         <FloatingTextSprite key={ft.id} ft={ft} />
@@ -1318,99 +1307,73 @@ function DungeonScene({
       {/* Treasure Chests */}
       {chests.map((chest) => (
         <group key={chest.id} position={chest.pos}>
-          {/* Base */}
-          <mesh position={[0, 0, 0]} castShadow>
+          <mesh position={[0, 0, 0]}>
             <boxGeometry args={[1.0, 0.6, 0.7]} />
             <meshStandardMaterial
-              color={chest.opened ? '#52525b' : '#854d0e'}
-              roughness={0.6}
-              metalness={0.2}
+              color={chest.opened ? '#52525b' : '#7c4a12'}
+              roughness={0.75}
+              metalness={0.1}
             />
           </mesh>
-          {/* Lid */}
-          <mesh
-            position={[0, chest.opened ? 0.6 : 0.35, chest.opened ? -0.3 : 0]}
-            rotation={[chest.opened ? -0.8 : 0, 0, 0]}
-            castShadow>
-            <boxGeometry args={[1.04, 0.2, 0.74]} />
-            <meshStandardMaterial
-              color={chest.opened ? '#71717a' : '#a16207'}
-              metalness={0.5}
-              roughness={0.4}
-            />
-          </mesh>
-          {/* Rarity Glow Halo */}
-          {!chest.opened && (
-            <pointLight
-              position={[0, 0.4, 0]}
-              intensity={8}
-              distance={4}
-              color={
-                chest.tier === 'legendary'
-                  ? '#f59e0b'
-                  : chest.tier === 'epic'
-                    ? '#a855f7'
-                    : '#3b82f6'
-              }
-            />
-          )}
+          {[-0.36, 0.36].map((x) => (
+            <mesh key={x} position={[x, 0.02, 0]}>
+              <boxGeometry args={[0.07, 0.64, 0.74]} />
+              <meshStandardMaterial color="#3f3f46" metalness={0.85} roughness={0.35} />
+            </mesh>
+          ))}
+          <group
+            position={[0, 0.3, chest.opened ? -0.35 : 0]}
+            rotation={[chest.opened ? -1.1 : 0, 0, 0]}>
+            <group position={[0, 0, chest.opened ? 0.35 : 0]}>
+              <mesh position={[0, 0.08, 0]} rotation={[0, 0, Math.PI / 2]} scale={[1, 1, 0.7]}>
+                <cylinderGeometry args={[0.2, 0.2, 1.04, 16, 1, false, 0, Math.PI]} />
+                <meshStandardMaterial
+                  color={chest.opened ? '#71717a' : '#a16207'}
+                  roughness={0.6}
+                  metalness={0.25}
+                  side={THREE.DoubleSide}
+                />
+              </mesh>
+              <mesh position={[0, 0.02, 0.37]}>
+                <boxGeometry args={[0.14, 0.18, 0.04]} />
+                <meshStandardMaterial color="#facc15" metalness={0.9} roughness={0.25} />
+              </mesh>
+            </group>
+          </group>
+          {/* Rarity Glow Halo (kept mounted: toggling lights recompiles every shader) */}
+          <pointLight
+            position={[0, 0.6, 0]}
+            intensity={chest.opened ? 0 : 8}
+            distance={4}
+            color={tierColor(chest.tier)}
+          />
         </group>
       ))}
 
       {/* Shrines */}
       {shrines.map((shrine) => (
         <group key={shrine.id} position={shrine.pos}>
-          <mesh position={[0, 0.5, 0]} castShadow>
+          <mesh position={[0, 0.5, 0]}>
             <cylinderGeometry args={[0.8, 1.0, 1.0, 10]} />
             <meshStandardMaterial color="#1e1e24" roughness={0.9} />
           </mesh>
-          <mesh position={[0, 1.4, 0]} rotation={[0.2, Date.now() * 0.001, 0]}>
-            <octahedronGeometry args={[0.35]} />
-            <meshStandardMaterial
-              color={shrine.type === 'health' ? '#ef4444' : '#38bdf8'}
-              emissive={shrine.type === 'health' ? '#b91c1c' : '#0284c7'}
-              emissiveIntensity={shrine.used ? 0.2 : 2.0}
-            />
+          <mesh position={[0, 1.02, 0]} rotation={[Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[0.62, 0.05, 8, 32]} />
+            <meshStandardMaterial color="#a1a1aa" metalness={0.8} roughness={0.3} />
           </mesh>
-          {!shrine.used && (
-            <pointLight
-              position={[0, 1.5, 0]}
-              intensity={12}
-              distance={6}
-              color={shrine.type === 'health' ? '#ef4444' : '#38bdf8'}
-            />
-          )}
+          <SpinningCrystal shrine={shrine} />
+          <pointLight
+            position={[0, 1.5, 0]}
+            intensity={shrine.used ? 0 : 12}
+            distance={6}
+            color={shrine.type === 'health' ? '#ef4444' : '#38bdf8'}
+          />
         </group>
       ))}
 
       {/* Animated Floor Spike Traps */}
       {traps.map((trap) => (
-        <group key={trap.id} position={trap.pos}>
-          <mesh position={[0, 0, 0]}>
-            <boxGeometry args={[1.8, 0.05, 1.8]} />
-            <meshStandardMaterial
-              color={trap.active ? '#ef4444' : '#3f3f46'}
-              emissive={trap.active ? '#991b1b' : '#000000'}
-              emissiveIntensity={trap.active ? 1.0 : 0}
-            />
-          </mesh>
-          {trap.active && (
-            <group position={[0, 0.35, 0]}>
-              {[-0.5, 0, 0.5].map((x) =>
-                [-0.5, 0, 0.5].map((z) => (
-                  <mesh key={`spike_${x}_${z}`} position={[x, 0, z]}>
-                    <coneGeometry args={[0.08, 0.7, 6]} />
-                    <meshStandardMaterial
-                      color="#d4d4d8"
-                      metalness={0.8}
-                      roughness={0.2}
-                    />
-                  </mesh>
-                )),
-              )}
-            </group>
-          )}
-        </group>
+        <SpikeTrap key={trap.id} trap={trap} />
       ))}
 
       {/* Exit Stairs / Portal */}
@@ -1428,232 +1391,111 @@ function DungeonScene({
             side={THREE.DoubleSide}
           />
         </mesh>
-        {stairsUnlocked && (
-          <pointLight
-            position={[0, 1.2, 0]}
-            intensity={20}
-            distance={8}
-            color="#10b981"
-          />
-        )}
+        <pointLight
+          position={[0, 1.2, 0]}
+          intensity={stairsUnlocked ? 20 : 0}
+          distance={8}
+          color="#10b981"
+        />
       </group>
 
-      {/* 3D Enemies & Bosses */}
-      {enemies.map((enemy) => {
-        if (enemy.hp <= 0) return null;
-        const s = enemy.scale;
-        const isHurt = enemy.state === 'hurt';
-
-        return (
-          <group
-            key={enemy.id}
-            ref={(node) => {
-              if (node) {
-                node.userData.adFlashId = enemy.id;
-                flashTargets.current.set(enemy.id, node);
-              } else {
-                flashTargets.current.delete(enemy.id);
-              }
-            }}
-            position={enemy.pos}
-            rotation={[0, enemy.rotY, 0]}
-            scale={[s, s, s]}>
-            {/* Enemy Telegraph Indicator Ring */}
-            {enemy.telegraphTimer > 0 && (
-              <mesh
-                position={[0, -0.85, 0]}
-                rotation={[-Math.PI / 2, 0, 0]}>
-                <ringGeometry
-                  args={[
-                    0.2,
-                    enemy.attackRange * (1.1 - enemy.telegraphTimer),
-                    24,
-                  ]}
-                />
-                <meshBasicMaterial
-                  color="#ef4444"
-                  transparent
-                  opacity={0.6}
-                  side={THREE.DoubleSide}
-                />
-              </mesh>
-            )}
-
-            {/* Boss / Mob Procedural 3D Mesh */}
-            {enemy.archetype === 'skeleton' && (
-              <group position={[0, 0, 0]}>
-                {/* Skull */}
-                <mesh position={[0, 0.6, 0]}>
-                  <boxGeometry args={[0.3, 0.35, 0.3]} />
-                  <meshStandardMaterial
-                    color={isHurt ? '#ef4444' : '#e4e4e7'}
-                    roughness={0.7}
-                  />
-                </mesh>
-                {/* Ribcage */}
-                <mesh position={[0, 0.15, 0]}>
-                  <cylinderGeometry args={[0.22, 0.16, 0.5, 8]} />
-                  <meshStandardMaterial
-                    color={isHurt ? '#ef4444' : '#d4d4d8'}
-                    roughness={0.8}
-                  />
-                </mesh>
-                {/* Glowing Eyes */}
-                <mesh position={[0.08, 0.65, 0.16]}>
-                  <sphereGeometry args={[0.04, 6, 6]} />
-                  <meshBasicMaterial color="#ef4444" />
-                </mesh>
-                <mesh position={[-0.08, 0.65, 0.16]}>
-                  <sphereGeometry args={[0.04, 6, 6]} />
-                  <meshBasicMaterial color="#ef4444" />
-                </mesh>
-                {/* Rusty Sword */}
-                <mesh position={[0.35, 0.15, 0.2]} rotation={[0.4, 0, -0.2]}>
-                  <boxGeometry args={[0.06, 0.6, 0.02]} />
-                  <meshStandardMaterial color="#71717a" metalness={0.8} />
-                </mesh>
-              </group>
-            )}
-
-            {enemy.archetype === 'cultist' && (
-              <group position={[0, 0, 0]}>
-                {/* Hooded Robe */}
-                <mesh position={[0, 0.3, 0]}>
-                  <coneGeometry args={[0.4, 1.2, 10]} />
-                  <meshStandardMaterial
-                    color={isHurt ? '#ef4444' : '#581c87'}
-                    roughness={0.9}
-                  />
-                </mesh>
-                {/* Glowing Mask */}
-                <mesh position={[0, 0.65, 0.15]}>
-                  <sphereGeometry args={[0.12, 8, 8]} />
-                  <meshBasicMaterial color="#c084fc" />
-                </mesh>
-                {/* Magic Staff */}
-                <mesh position={[0.4, 0.3, 0.1]}>
-                  <cylinderGeometry args={[0.03, 0.03, 1.4, 6]} />
-                  <meshStandardMaterial color="#451a03" />
-                </mesh>
-                <mesh position={[0.4, 1.0, 0.1]}>
-                  <octahedronGeometry args={[0.15]} />
-                  <meshStandardMaterial
-                    color="#a855f7"
-                    emissive="#9333ea"
-                    emissiveIntensity={2.0}
-                  />
-                </mesh>
-              </group>
-            )}
-
-            {enemy.archetype === 'slime' && (
-              <group position={[0, 0, 0]}>
-                <mesh position={[0, 0.2, 0]}>
-                  <sphereGeometry args={[0.45, 12, 12]} />
-                  <meshStandardMaterial
-                    color={isHurt ? '#ef4444' : '#22c55e'}
-                    emissive="#15803d"
-                    emissiveIntensity={0.6}
-                    transparent
-                    opacity={0.85}
-                  />
-                </mesh>
-                {/* Slime Nucleus */}
-                <mesh position={[0, 0.2, 0]}>
-                  <sphereGeometry args={[0.18, 8, 8]} />
-                  <meshStandardMaterial color="#166534" />
-                </mesh>
-              </group>
-            )}
-
-            {/* Boss Colossus / Overlord / Archmage */}
-            {enemy.isBoss && (
-              <group position={[0, 0, 0]}>
-                {/* Colossus Torso & Armor */}
-                <mesh position={[0, 0.8, 0]} castShadow>
-                  <boxGeometry args={[0.9, 1.1, 0.6]} />
-                  <meshStandardMaterial
-                    color={isHurt ? '#ef4444' : enemy.color}
-                    metalness={0.7}
-                    roughness={0.3}
-                  />
-                </mesh>
-                {/* Horned Helmet */}
-                <mesh position={[0, 1.6, 0]} castShadow>
-                  <boxGeometry args={[0.5, 0.55, 0.5]} />
-                  <meshStandardMaterial
-                    color="#1e1e24"
-                    metalness={0.9}
-                    roughness={0.2}
-                  />
-                </mesh>
-                {/* Glowing Crown / Horns */}
-                <mesh position={[0.3, 1.95, 0]} rotation={[0, 0, 0.4]}>
-                  <coneGeometry args={[0.1, 0.5, 6]} />
-                  <meshStandardMaterial color="#fbbf24" emissive="#d97706" />
-                </mesh>
-                <mesh position={[-0.3, 1.95, 0]} rotation={[0, 0, -0.4]}>
-                  <coneGeometry args={[0.1, 0.5, 6]} />
-                  <meshStandardMaterial color="#fbbf24" emissive="#d97706" />
-                </mesh>
-                {/* Giant Boss Weapon */}
-                <mesh position={[0.75, 0.8, 0.4]} rotation={[0.4, 0, -0.3]}>
-                  <boxGeometry args={[0.18, 1.6, 0.08]} />
-                  <meshStandardMaterial
-                    color="#475569"
-                    metalness={0.9}
-                    emissive={enemy.color}
-                    emissiveIntensity={0.8}
-                  />
-                </mesh>
-                <pointLight
-                  position={[0, 1.5, 0]}
-                  intensity={15}
-                  distance={8}
-                  color={enemy.color}
-                />
-              </group>
-            )}
-          </group>
-        );
-      })}
+      {/* 3D Enemies & Bosses (animated imperatively; never re-rendered while alive) */}
+      {enemies.map(
+        (enemy) =>
+          enemy.hp > 0 && (
+            <EnemyModel key={enemy.id} enemy={enemy} clock={animClock} registerFlash={registerFlash} />
+          ),
+      )}
 
       {/* Boss Attack Telegraphs (world-space, locked at windup start) */}
       {enemies.map(
         (enemy) =>
           enemy.hp > 0 &&
-          enemy.isBoss &&
-          enemy.telegraph && (
-            <BossTelegraph key={`tel_${enemy.id}`} telegraph={enemy.telegraph} />
-          ),
+          enemy.isBoss && <LiveBossTelegraph key={`tel_${enemy.id}`} source={enemy} />,
       )}
 
-      {/* Projectiles */}
+      {/* Projectiles: emissive core + additive halo, picked up by bloom (no per-shot lights) */}
       {projectiles.map((proj) => (
         <group key={proj.id} position={proj.pos}>
-          <mesh>
-            <sphereGeometry args={[proj.radius, 12, 12]} />
-            <meshStandardMaterial
+          <mesh geometry={projectileGeo} scale={proj.radius * 0.55}>
+            <meshBasicMaterial color="#fff7ed" toneMapped={false} />
+          </mesh>
+          <mesh geometry={projectileGeo} scale={proj.radius}>
+            <meshBasicMaterial
               color={proj.color}
-              emissive={proj.color}
-              emissiveIntensity={2.5}
+              toneMapped={false}
+              transparent
+              opacity={0.75}
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
             />
           </mesh>
-          <pointLight
-            intensity={10}
-            distance={5}
-            color={proj.color}
-          />
         </group>
       ))}
 
       {/* Particle Sparks */}
       {particles.map((p) => (
-        <mesh key={p.id} position={p.pos}>
-          <sphereGeometry args={[p.size, 6, 6]} />
-          <meshBasicMaterial color={p.color} />
+        <mesh key={p.id} geometry={sparkGeo} position={p.pos} scale={p.size}>
+          <meshBasicMaterial color={p.color} toneMapped={false} />
         </mesh>
       ))}
+    </group>
+  );
+}
+
+/** Shrine crystal: spins and bobs every frame without re-rendering the scene. */
+function SpinningCrystal({shrine}: {shrine: ShrineEntity}) {
+  const ref = useRef<THREE.Mesh>(null);
+  useFrame(({clock}) => {
+    const m = ref.current;
+    if (!m) return;
+    const t = clock.elapsedTime;
+    m.rotation.y = t * (shrine.used ? 0.3 : 1.2);
+    m.position.y = 1.45 + Math.sin(t * 1.8) * (shrine.used ? 0.02 : 0.1);
+  });
+  return (
+    <mesh ref={ref} position={[0, 1.45, 0]} rotation={[0.2, 0, 0]}>
+      <octahedronGeometry args={[0.35]} />
+      <meshStandardMaterial
+        color={shrine.type === 'health' ? '#ef4444' : '#38bdf8'}
+        emissive={shrine.type === 'health' ? '#b91c1c' : '#0284c7'}
+        emissiveIntensity={shrine.used ? 0.2 : 2.0}
+      />
+    </mesh>
+  );
+}
+
+/** Spike trap: reads `trap.active` every frame and slides the spikes up/down. */
+function SpikeTrap({trap}: {trap: TrapEntity}) {
+  const spikes = useRef<THREE.Group>(null);
+  const plate = useRef<THREE.MeshStandardMaterial>(null);
+  useFrame((_, delta) => {
+    const g = spikes.current;
+    if (!g) return;
+    const target = trap.active ? 0.35 : -0.4;
+    g.position.y += (target - g.position.y) * Math.min(1, delta * (trap.active ? 30 : 8));
+    g.visible = g.position.y > -0.38;
+    if (plate.current) {
+      plate.current.color.set(trap.active ? '#7f1d1d' : '#3f3f46');
+      plate.current.emissiveIntensity = trap.active ? 1.0 : 0;
+    }
+  });
+  return (
+    <group position={trap.pos}>
+      <mesh>
+        <boxGeometry args={[1.8, 0.05, 1.8]} />
+        <meshStandardMaterial ref={plate} color="#3f3f46" emissive="#991b1b" emissiveIntensity={0} />
+      </mesh>
+      <group ref={spikes} position={[0, -0.4, 0]} visible={false}>
+        {[-0.5, 0, 0.5].map((x) =>
+          [-0.5, 0, 0.5].map((z) => (
+            <mesh key={`spike_${x}_${z}`} position={[x, 0, z]}>
+              <coneGeometry args={[0.08, 0.7, 6]} />
+              <meshStandardMaterial color="#d4d4d8" metalness={0.8} roughness={0.2} />
+            </mesh>
+          )),
+        )}
+      </group>
     </group>
   );
 }
@@ -1662,27 +1504,32 @@ function DungeonScene({
 export function Game(props: GameProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useInput(containerRef, {enabled: true});
+  const sceneProps = useMemo(
+    () => ({
+      background: new THREE.Color(getConfig('backgroundColor')),
+      fog: new THREE.FogExp2(getConfig('backgroundColor'), 0.04),
+    }),
+    [],
+  );
 
   return (
     <div ref={containerRef} className="w-full h-full canvas-wrapper relative">
       <Canvas
         shadows
-        dpr={[1, 2]}
+        dpr={[1, 1.5]}
         camera={{
           fov: getConfig('fov'),
           near: 0.1,
-          far: 1000,
+          far: 120,
           position: [0, 1.5, 0],
         }}
         gl={{
           antialias: true,
+          powerPreference: 'high-performance',
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1.1,
         }}
-        scene={{
-          background: new THREE.Color(getConfig('backgroundColor')),
-          fog: new THREE.FogExp2(getConfig('backgroundColor'), 0.04),
-        }}>
+        scene={sceneProps}>
         <Suspense fallback={null}>
           {/* Ambient Lighting */}
           <ambientLight

@@ -126,6 +126,12 @@ export interface EnemyEntity {
   color: string;
   scale: number;
   dropLoot?: LootItem;
+  /** Perception (see enemyPerception.ts): true while the player is in sight. */
+  seesPlayer?: boolean;
+  /** Last world XZ where this enemy saw (or was hit by) the player. */
+  lastKnownPos?: [number, number];
+  /** Seconds left hunting `lastKnownPos` after losing sight. */
+  memory?: number;
 }
 
 export interface FloatingText {

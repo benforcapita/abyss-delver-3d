@@ -308,16 +308,17 @@ export function generateDungeonFloor(
     const rw = room.w;
     const rh = room.h;
 
-    // Torches on room corners
-    torches.push(toWorld(rx + 0.2, ry + 0.2, 2.2));
-    torches.push(toWorld(rx + rw - 0.2, ry + rh - 0.2, 2.2));
+    // Torches on room corners, mounted just in front of the wall faces
+    // (tiles are centred on their grid coordinate, so walls start half a tile out).
+    torches.push(toWorld(rx - 0.42, ry - 0.42, 2.2));
+    torches.push(toWorld(rx + rw - 1 + 0.42, ry + rh - 1 + 0.42, 2.2));
 
     // Pillars in larger rooms
     if (rw >= 5 && rh >= 5) {
-      pillars.push(toWorld(rx + 1.2, ry + 1.2, 0));
-      pillars.push(toWorld(rx + rw - 1.2, ry + 1.2, 0));
-      pillars.push(toWorld(rx + 1.2, ry + rh - 1.2, 0));
-      pillars.push(toWorld(rx + rw - 1.2, ry + rh - 1.2, 0));
+      pillars.push(toWorld(rx + 0.7, ry + 0.7, 0));
+      pillars.push(toWorld(rx + rw - 1.7, ry + 0.7, 0));
+      pillars.push(toWorld(rx + 0.7, ry + rh - 1.7, 0));
+      pillars.push(toWorld(rx + rw - 1.7, ry + rh - 1.7, 0));
     }
 
     if (room.type === 'treasure') {
